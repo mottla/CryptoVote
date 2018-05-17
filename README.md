@@ -18,9 +18,9 @@ Operations on the ed25519 curve taken from https://github.com/decred/dcrd
 Currently it should be used for educational purposes only!
 
 *Missing*
-No underlying database
-No automated neighbor finding
-No DOS protection
-No elegant handeling of orphan blocks
-No merkle tree. One block can holds at most one transaction.
+-No underlying database
+-No automated neighbor finding
+-No DOS protection
+-No elegant handeling of orphan blocks
+-No merkle tree. One block holds at most one transaction.
 
