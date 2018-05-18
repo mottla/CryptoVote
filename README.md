@@ -1,7 +1,6 @@
 # CryptoVote
 CryptoVote is a protocol that allows
-the creation and execution of fully decentralized election processes by com-
-bining the blockchain with elaborated cryptography.
+the creation and execution of fully decentralized election processes by combining the blockchain with elaborated cryptography.
 
 *It aims to provide:* 
 
@@ -12,7 +11,7 @@ voting or not.
 4. No duplication and multiple voting.
 5. Hiding the state of a voting until the voting period is over.
 
-It uses crypto from Crypto Note 2.0 (Nicolas van Saberhagen) (ring signature and stealth address)
+It uses crypto from Crypto Note 2.0 (Nicolas van Saberhagen) (ring signature and stealth address).
 Operations on the ed25519 curve taken from https://github.com/decred/dcrd
 
 Currently it should be used for educational purposes only!
@@ -21,6 +20,6 @@ Currently it should be used for educational purposes only!
 1. No underlying database
 2. No automated neighbor finding
 3. No DOS protection
-4. No elegant handeling of orphan blocks
+4. No elegant handling of orphan blocks
 5. No merkle tree. One block holds at most one transaction.
 
