@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"fmt"
+	"syscall"
 )
 
 const (
@@ -150,6 +151,16 @@ func interruptListener() <-chan struct{} {
 	return c
 }
 
+// filesExists reports whether the named file or directory exists.
+func fileExists(name string) bool {
+	if _, err := os.Stat(name); err != nil {
+		if os.IsNotExist(err) {
+			return false
+		}
+	}
+	return true
+}
+
 // copies the first 32 byte of a 64 byte array into a new 32 byte array
 func copyBytesTo32(aB [64]byte) (res [32]byte) {
 	res = [32]byte{}
@@ -168,4 +179,44 @@ func interruptRequested(interrupted <-chan struct{}) bool {
 	}
 
 	return false
+}
+
+const (
+	fileLimitWant = 2048
+	fileLimitMin  = 1024
+)
+
+// SetLimits raises some process limits to values which allow cryptovote and
+// associated utilities to run.
+func SetLimits() error {
+	var rLimit syscall.Rlimit
+
+	err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rLimit)
+	if err != nil {
+		return err
+	}
+	if rLimit.Cur > fileLimitWant {
+		return nil
+	}
+	if rLimit.Max < fileLimitMin {
+		err = fmt.Errorf("need at least %v file descriptors",
+			fileLimitMin)
+		return err
+	}
+	if rLimit.Max < fileLimitWant {
+		rLimit.Cur = rLimit.Max
+	} else {
+		rLimit.Cur = fileLimitWant
+	}
+	err = syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rLimit)
+	if err != nil {
+		// try min value
+		rLimit.Cur = fileLimitMin
+		err = syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rLimit)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

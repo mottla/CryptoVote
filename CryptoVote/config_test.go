@@ -7,7 +7,8 @@ import (
 	"testing"
 	"bytes"
 	"fmt"
-	"github.com/naivechain-master/CryptoNote1/edwards"
+
+	"github.com/CryptoVote/CryptoVote/CryptoNote1/edwards"
 )
 
 func TestBlockchain_Block_hash(t *testing.T) {

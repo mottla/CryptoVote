@@ -1,16 +1,15 @@
 // Copyright (c) 2018-2019 by mottla
 // Use of this source code is governed by an MIT
 // license that can be found in the LICENSE file.
-package CrptoNote1
+package CryptoNote1
 
 import (
 	"testing"
 	"fmt"
+	"time"
 
 	"golang.org/x/crypto/sha3"
-	"time"
-	//"math/big"
-	"github.com/naivechain-master/CryptoNote1/edwards"
+	"github.com/CryptoVote/CryptoVote/CryptoNote1/edwards"
 )
 
 func timeTrack(start time.Time, name string) {

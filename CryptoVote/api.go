@@ -64,7 +64,7 @@ func (node *Node) transactionByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	block, ok := node.blockchain.BlockHoldingTx(byteMap["id"])
-	fmt.Println("received ", byteMap["id"])
+	//fmt.Println("received ", byteMap["id"])
 	b, err := json.Marshal("transactionByID not found")
 	if ok {
 		b, err = json.Marshal(block)
@@ -166,7 +166,7 @@ func (node *Node) addTransaction(w http.ResponseWriter, r *http.Request) {
 		node.error(w, err, "failed to decode params")
 		return
 	}
-	node.log("received transaction: %v", t)
+	node.log("received transaction-type: ", t.Typ.name())
 
 	if node.pool.contains(&t) {
 		err := errorCall("Transaction with this ID is already in pool")
@@ -213,7 +213,7 @@ func (node *Node) startMining(w http.ResponseWriter, r *http.Request) {
 		node.error(w, err, "failed to decode params")
 		return
 	}
-	fmt.Println(priceMap)
+
 	var b []byte
 	var err error
 	if !node.miner.IsMining() {

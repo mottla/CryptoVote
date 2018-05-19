@@ -142,7 +142,7 @@ func (node *Node) handleBlocksResponse(conn *Conn, msg *Message) error {
 		return errorCall("recived empty blocks")
 	}
 
-	node.log(fmt.Sprintf("handle %v blocks, starting with %v : ", blocks.Len(), blocks[0]))
+	node.log(fmt.Sprintf("handle %v blocks, starting at index %v : ", blocks.Len(), blocks[0].Index))
 	msg, broadcast, err2 := node.validateChain(blocks)
 
 	if err2 != nil {

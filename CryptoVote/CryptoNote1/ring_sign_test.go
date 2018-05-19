@@ -1,27 +1,17 @@
 // Copyright (c) 2018-2019 by mottla
 // Use of this source code is governed by an MIT
 // license that can be found in the LICENSE file.
-package CrptoNote1
+package CryptoNote1
 
 import (
 	"testing"
 	"fmt"
-
-	//"golang.org/x/crypto/sha3"
-
-	//"crypto/sha256"
-	//edwards2 "github.com/naivechain-master/CryptoNote1/edwards"
-	"github.com/naivechain-master/CryptoNote1/edwards"
-	//"golang.org/x/crypto/curve25519"
 	"math/rand"
 	"crypto/elliptic"
-	//"math/big"
-
-	//"math/big"
 	"math/big"
-	//"github.com/golang/dep/gps/_testdata/src/canonical/sub"
-	//"crypto/sha256"
 	"crypto/sha256"
+
+	"github.com/CryptoVote/CryptoVote/CryptoNote1/edwards"
 )
 
 func TestNewTRS(t *testing.T) {
@@ -153,23 +143,23 @@ func TestSignVerify_LSAG(t *testing.T) {
 //}
 
 func BenchmarkSignVerify_TRS(b *testing.B) {
-	randSeed := int64(54321)
-	//tRand := rand.New(rand.NewSource(randSeed))
-
-	for i := 0; i < 100; i++ {
-		var sig = RingSignature(NewLSAG(nil, nil))
-
-		message := []byte("hallo world")
-		sigpos, privatekey, pkps := PrepareRingSig_random(sig, randSeed, 7)
-
-		sig.Sign(message, pkps, privatekey, sigpos)
-
-		res := sig.Verify(message, pkps)
-		if !res {
-			b.Error("Verification P256 failed")
-			return
-		}
-		randSeed += 3
-	}
+	//randSeed := int64(54321)
+	////tRand := rand.New(rand.NewSource(randSeed))
+	//
+	//for i := 0; i < 100; i++ {
+	//	var sig = RingSignature(NewLSAG(nil, nil))
+	//
+	//	message := []byte("hallo world")
+	//	sigpos, privatekey, pkps := PrepareRingSig_random(sig, randSeed, 7)
+	//
+	//	sig.Sign(message, pkps, privatekey, sigpos)
+	//
+	//	res := sig.Verify(message, pkps)
+	//	if !res {
+	//		b.Error("Verification P256 failed")
+	//		return
+	//	}
+	//	randSeed += 3
+	//}
 
 }

@@ -79,9 +79,11 @@ func (m *CPUMiner) Start(blocksToMine, procs uint8) {
 	// Respond with an error if server is already mining.
 	if m.started {
 		//m.Unlock()
+		m.log("miner already running")
 		return
 	}
 	m.Lock()
+	m.log("miner started with ", procs, "processors and ",blocksToMine," blocks to mine")
 	m.started = true
 	defer func() {
 		m.Unlock()

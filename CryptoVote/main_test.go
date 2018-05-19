@@ -20,7 +20,7 @@ func Test1Node(t *testing.T) {
 	interrupt := interruptListener()
 	flag.Parse()
 	a, b := ":6000", ":3000"
-	newNode(a,b).run()
+	go newNode(a,b).run()
 	<-interrupt
 
 }

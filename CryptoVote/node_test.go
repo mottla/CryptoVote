@@ -15,11 +15,12 @@ import (
 	"fmt"
 	"time"
 
-	cn "github.com/naivechain-master/CryptoNote1"
-	"github.com/naivechain-master/CryptoNote1/edwards"
+
 	"encoding/hex"
 	"crypto/ecdsa"
 	"golang.org/x/crypto/sha3"
+	"github.com/CryptoVote/CryptoVote/CryptoNote1/edwards"
+	"github.com/CryptoVote/CryptoVote/CryptoNote1"
 )
 
 var (
@@ -29,7 +30,7 @@ var (
 	//voteOn            = 2 //starting at 0,1,..
 	signerPrivatekey = [32]byte{10, 208, 227, 225, 224, 127, 119, 57, 208, 241, 225, 21, 244, 52, 214, 155, 198, 66, 54,
 		32, 211, 17, 38, 94, 174, 127, 220, 47, 156, 18, 202, 216}
-	id, err = hex.DecodeString("6c8aff29d82ffe3ce36a6bb28a41a3863ab777be96a1c27bc32fa37b4e67146547f561725853d543af1da1146027fbc16b56c07a951574384e3ff6b4f5bbf303")
+	id, err = hex.DecodeString("6c8aff29d82ffe3ce36a6bb28a41a3863ab777be96a1c27bc32fa37b4e6714654a0e3b7179a62f06597067bdd2742647bb93b7988dc6f9e885b2af6c6016fa00")
 )
 //6c8aff29d82ffe3ce36a6bb28a41a3863ab777be96a1c27bc32fa37b4e67146547f561725853d543af1da1146027fbc16b56c07a951574384e3ff6b4f5bbf303
 //6c8aff29d82ffe3ce36a6bb28a41a3863ab777be96a1c27bc32fa37b4e67146513ccbb66fa04a8e39b1bc6ca10c018d62051d81abd4eed46843557adf2402202
@@ -46,7 +47,7 @@ var node = ":3000"
 //for getting transactions
 var getnode = ":3000"
 //for vote results
-var resnode = ":3003"
+var resnode = ":3000"
 //steps 1 to 4 allow a full testing for a reveal required voting
 //1#
 func Test_VOTESET_VOTECONTRACT(t *testing.T) {
@@ -183,7 +184,7 @@ func Test_VOTE(t *testing.T) {
 		return
 	}
 
-	P, R := cn.GenerateOneTime_VOTE(VOTEON, nil, nil)
+	P, R := CryptoNote1.GenerateOneTime_VOTE(VOTEON, nil, nil)
 	Pbyt := [32]byte{}
 	Rbyt := [32]byte{}
 	copy(Rbyt[:], R.Serialize())
@@ -194,7 +195,7 @@ func Test_VOTE(t *testing.T) {
 	hasher.Write(Pbyt[:])
 	message := hasher.Sum(nil)
 
-	sig := cn.NewLSAG(privatekeys[voter].ToECDSA(), nil, nil)
+	sig := CryptoNote1.NewLSAG(privatekeys[voter].ToECDSA(), nil, nil)
 
 	//fmt.Printf("Creating Linkable Spontaneous Anonymous Groups Signature\non %s, using SHA256.  Signer position is %v of %v\n", curve.Params().Name, sig.signerPosition, chainHeight(sig.pubKeys))
 	sig.Sign(message, pubkeys, privatekeys[voter].ToECDSA(), voter)

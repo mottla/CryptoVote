@@ -39,7 +39,7 @@ func (mp *TxPool) addTransaction(trans *transaction) bool {
 	//if bytes.Compare(trans.EdSignature[:], [64]byte{}[:])C
 
 	mp.poolMap[trans.EdSignature] = trans
-	mp.log("added new transaction to pool %v", trans.Typ)
+	mp.log("added new transaction to pool ", trans.Typ.name())
 	return true
 
 }

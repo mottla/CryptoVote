@@ -1,7 +1,7 @@
 // Copyright (c) 2018-2019 by mottla
 // Use of this source code is governed by an MIT
 // license that can be found in the LICENSE file.
-package CrptoNote1
+package CryptoNote1
 
 import (
 	"fmt"
@@ -11,16 +11,12 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	mr "math/rand"
-
 	"encoding/binary"
 	"bytes"
 	"hash"
-	"github.com/naivechain-master/CryptoNote1/edwards"
+
 	"golang.org/x/crypto/sha3"
-	//"crypto/sha512"
-	//"crypto/sha512"
-	//"golang.org/x/crypto/ed25519"
-	//"github.com/agl/ed25519"
+	"github.com/CryptoVote/CryptoVote/CryptoNote1/edwards"
 )
 
 var defaultCurve = edwards.Edwards()

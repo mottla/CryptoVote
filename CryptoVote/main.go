@@ -7,11 +7,14 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os"
+	"runtime"
+
 )
 
 var (
-	apiAddr   = flag.String("api", ":3001", "HTTP server address for API")
-	p2pAddr   = flag.String("p2p", ":6001", "WebSocket server address for P2P")
+	apiAddr   = flag.String("api", ":3000", "HTTP server address for API")
+	p2pAddr   = flag.String("p2p", ":6000", "WebSocket server address for P2P")
 	p2pOrigin = flag.String("origin", "http://127.0.0.1", "P2P origin")
 
 	ErrInvalidChain       = errors.New("invalid chain")
@@ -20,23 +23,20 @@ var (
 )
 
 func main() {
-	//interrupt := interruptListener()
+	interrupt := interruptListener()
 
+	//defers dont work on os.exit().. Ill check that
 	defer fmt.Printf("Shutdown complete")
 
+	// Use all processor cores and up some limits.
+	runtime.GOMAXPROCS(runtime.NumCPU())
+	if err := SetLimits(); err != nil {
+		os.Exit(1)
+	}
+
 	flag.Parse()
-	a, b, c, d := ":6000", ":3000", ":6001", ":3001"
 
-	//a=new(string)
-
-	fmt.Printf(" %s ### %s\n", *p2pAddr, *apiAddr)
-	go newNode(a, b).run()
-	newNode(c, d).run()
-	//newNode().run(&a, &b)
-	//newNode().run(&c, &d)
-	//fmt.Printf(*p2pAddr)
-	//newNode().run(p2pAddr, apiAddr)
-
-	//<-interrupt
+	go newNode(*p2pAddr, *apiAddr).run()
+	<-interrupt
 
 }

@@ -2,14 +2,15 @@
 // Use of this source code is governed by an MIT
 // license that can be found in the LICENSE file.
 
-package CrptoNote1
+package CryptoNote1
 
 import (
 	"math/big"
-	"github.com/naivechain-master/CryptoNote1/edwards"
+
 	"hash"
 	"crypto/elliptic"
 	//"crypto/ecdsa"
+	"github.com/CryptoVote/CryptoVote/CryptoNote1/edwards"
 )
 
 //takes an elliptic Curve and a public key pair (A,B) as input

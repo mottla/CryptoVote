@@ -4,11 +4,12 @@
 package main
 
 import (
-	cn "github.com/naivechain-master/CryptoNote1"
 	"fmt"
-	"github.com/naivechain-master/CryptoNote1/edwards"
+
 	"bytes"
 	"github.com/agl/ed25519"
+	"github.com/CryptoVote/CryptoVote/CryptoNote1"
+	"github.com/CryptoVote/CryptoVote/CryptoNote1/edwards"
 )
 
 type TransactionType byte
@@ -29,16 +30,16 @@ const (
 type transaction struct {
 	EdSignature [64]byte `json:"ID"` //
 
-	Signer        [32]byte        `json:"Data"`
-	Typ           TransactionType `json:"Typ"`
-	VoteSet       [][32]byte      `json:"voteset"`       //set of blockhashes holding the type specific information
-	PubKeys       [][32]byte      `json:"pubkeys"`       //set containing public ed25519 points
-	Signature     cn.Sigma        `json:"sig"`           //Ring signature
-	VoteHash      [32]byte        `json:"Hash"`          //for Vote transactionByID only. Points on the blockhash containing the desired vote contract
-	VoteTo        [32]byte        `json:"voteOnAddress"` //for Vote transactionByID only. VoteTo is one of the addresses listet by the contract a user can vote on
-	RevealElement [32]byte        `json:"reveal_element"`
-	PrivateKeys   [][32]byte      `json:"private_keys"` //only needed to reaveal the votingresults for a COMPLETE_VOTE transaction
-	RevealNeeded  bool            `json:"reveal_needed"`
+	Signer        [32]byte          `json:"Data"`
+	Typ           TransactionType   `json:"Typ"`
+	VoteSet       [][32]byte        `json:"voteset"`       //set of blockhashes holding the type specific information
+	PubKeys       [][32]byte        `json:"pubkeys"`       //set containing public ed25519 points
+	Signature     CryptoNote1.Sigma `json:"sig"`           //Ring signature
+	VoteHash      [32]byte          `json:"Hash"`          //for Vote transactionByID only. Points on the blockhash containing the desired vote contract
+	VoteTo        [32]byte          `json:"voteOnAddress"` //for Vote transactionByID only. VoteTo is one of the addresses listet by the contract a user can vote on
+	RevealElement [32]byte          `json:"reveal_element"`
+	PrivateKeys   [][32]byte        `json:"private_keys"` //only needed to reaveal the votingresults for a COMPLETE_VOTE transaction
+	RevealNeeded  bool             `json:"reveal_needed"`
 }
 
 var emptySig = [64]byte{}

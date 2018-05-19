@@ -12,12 +12,14 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
-
 	"golang.org/x/net/websocket"
 	"fmt"
-	"github.com/naivechain-master/CryptoNote1/edwards"
 	"hash"
 	"golang.org/x/crypto/sha3"
+	"github.com/CryptoVote/CryptoVote/database"
+	"github.com/CryptoVote/CryptoVote/CryptoNote1/edwards"
+
+	"path/filepath"
 )
 
 type ErrorResponse struct {
@@ -51,8 +53,57 @@ func (node *Node) submitBlock(block *Block) {
 }
 
 func newNode(p2pAddr, apiAddr string) *Node {
+
+	cfg = &config{
+		TestNet3:             true,
+		//ConfigFile:           defaultConfigFile,
+		//DebugLevel:           defaultLogLevel,
+		//MaxPeers:             defaultMaxPeers,
+		//BanDuration:          defaultBanDuration,
+		//BanThreshold:         defaultBanThreshold,
+		//RPCMaxClients:        defaultMaxRPCClients,
+		//RPCMaxWebsockets:     defaultMaxRPCWebsockets,
+		//RPCMaxConcurrentReqs: defaultMaxRPCConcurrentReqs,
+		//DataDir:              defaultDataDir,
+		//LogDir:               defaultLogDir,
+		DbType:               "ffldb",
+		//RPCKey:               defaultRPCKeyFile,
+		//RPCCert:              defaultRPCCertFile,
+		//MinRelayTxFee:        mempool.DefaultMinRelayTxFee.ToBTC(),
+		//FreeTxRelayLimit:     defaultFreeTxRelayLimit,
+		//BlockMinSize:         defaultBlockMinSize,
+		//BlockMaxSize:         defaultBlockMaxSize,
+		//BlockMinWeight:       defaultBlockMinWeight,
+		//BlockMaxWeight:       defaultBlockMaxWeight,
+		//BlockPrioritySize:    mempool.DefaultBlockPrioritySize,
+		//MaxOrphanTxs:         defaultMaxOrphanTransactions,
+		//SigCacheMaxSize:      defaultSigCacheMaxSize,
+		//Generate:             defaultGenerate,
+		//TxIndex:              defaultTxIndex,
+		//AddrIndex:            defaultAddrIndex,
+	}
+
+
+
+	Nodelog := log.New(
+		os.Stdout,
+		fmt.Sprintf("[%v] Node: ", apiAddr),
+		log.Ldate|log.Ltime,
+	)
+
 	bc := newBlockchainGenesis()
 
+	//// Load the block database.
+	//db, err := loadBlockDB()
+	//if err != nil {
+	//	Nodelog.Fatalf("%v", err)
+	//	return nil
+	//}
+	//defer func() {
+	//	// Ensure the database is sync'd and closed on shutdown.
+	//	Nodelog.Println("Gracefully shutting down the database...")
+	//	db.Close()
+	//}()
 
 	pool := &TxPool{
 		mtx:     sync.RWMutex{},
@@ -82,15 +133,11 @@ func newNode(p2pAddr, apiAddr string) *Node {
 		miner:      miner,
 		conns:      []*Conn{},
 		mu:         sync.RWMutex{},
-		logger: log.New(
-			os.Stdout,
-			fmt.Sprintf("[%v] Node: ", apiAddr),
-			log.Ldate|log.Ltime,
-		),
-		p2pAddr: p2pAddr,
-		apiAddr: apiAddr,
-		edcurve: edwards.Edwards(),
-		hasher:  sha3.New256(),
+		logger:     Nodelog,
+		p2pAddr:    p2pAddr,
+		apiAddr:    apiAddr,
+		edcurve:    edwards.Edwards(),
+		hasher:     sha3.New256(),
 	}
 	n.miner.not = notifier(n)
 	return n
@@ -129,7 +176,7 @@ func (node *Node) newP2PServer(p2pAddr *string) *http.Server {
 	}
 }
 
-func (node *Node) run()  {
+func (node *Node) run() {
 	apiSrv := node.newApiServer(&node.apiAddr)
 
 	go func() {
@@ -164,7 +211,7 @@ func (node *Node) run()  {
 }
 
 func (node *Node) log(v ...interface{}) {
-	
+
 	node.logger.Println(v)
 }
 
@@ -188,4 +235,129 @@ func (node *Node) error(w http.ResponseWriter, err error, message string) {
 	}
 
 	node.writeResponse(w, b)
+}
+
+// loadBlockDB loads (or creates when needed) the block database taking into
+// account the selected database backend and returns a handle to it.  It also
+// contains additional logic such warning the user if there are multiple
+// databases which consume space on the file system and ensuring the regression
+// test database is clean when in regression test mode.
+func loadBlockDB() (database.DB, error) {
+	// The memdb backend does not have a file path associated with it, so
+	// handle it uniquely.  We also don't want to worry about the multiple
+	// database type warnings when running with the memory database.
+	if cfg.DbType == "memdb" {
+		fmt.Println("Creating block database in memory.")
+		db, err := database.Create("ffldb")
+		if err != nil {
+			return nil, err
+		}
+		return db, nil
+	}
+
+	warnMultipleDBs()
+
+	// The database name is based on the database type.
+	dbPath := blockDbPath(cfg.DbType)
+
+	// The regression test is special in that it needs a clean database for
+	// each run, so remove it now if it already exists.
+	removeRegressionDB(dbPath)
+
+	fmt.Printf("\nLoading block database from '%s'", dbPath)
+	db, err := database.Open(cfg.DbType, dbPath, 0xff)
+	if err != nil {
+		// Return the error if it's not because the database doesn't
+		// exist.
+		if dbErr, ok := err.(database.Error); !ok || dbErr.ErrorCode !=
+			database.ErrDbDoesNotExist {
+
+			return nil, err
+		}
+
+		// Create the db if it does not exist.
+		err = os.MkdirAll(cfg.DataDir, 0700)
+		if err != nil {
+			return nil, err
+		}
+		db, err = database.Create(cfg.DbType, dbPath, 0xff)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	fmt.Println("Block database loaded")
+	return db, nil
+}
+
+// warnMultipleDBs shows a warning if multiple block database types are detected.
+// This is not a situation most users want.  It is handy for development however
+// to support multiple side-by-side databases.
+func warnMultipleDBs() {
+	// This is intentionally not using the known db types which depend
+	// on the database types compiled into the binary since we want to
+	// detect legacy db types as well.
+	dbTypes := []string{"ffldb", "leveldb", "sqlite"}
+	duplicateDbPaths := make([]string, 0, len(dbTypes)-1)
+	for _, dbType := range dbTypes {
+		if dbType == cfg.DbType {
+			continue
+		}
+
+		// Store db path as a duplicate db if it exists.
+		dbPath := blockDbPath(dbType)
+		if fileExists(dbPath) {
+			duplicateDbPaths = append(duplicateDbPaths, dbPath)
+		}
+	}
+
+	// Warn if there are extra databases.
+	if len(duplicateDbPaths) > 0 {
+		selectedDbPath := blockDbPath(cfg.DbType)
+		fmt.Printf("WARNING: There are multiple block chain databases "+
+			"using different database types.\nYou probably don't "+
+			"want to waste disk space by having more than one.\n"+
+			"Your current database is located at [%v].\nThe "+
+			"additional database is located at %v", selectedDbPath,
+			duplicateDbPaths)
+	}
+}
+
+// dbPath returns the path to the block database given a database type.
+func blockDbPath(dbType string) string {
+	// The database name is based on the database type.
+	dbName := "blocks" + "_" + dbType
+	if dbType == "sqlite" {
+		dbName = dbName + ".db"
+	}
+	dbPath := filepath.Join(cfg.DataDir, dbName)
+	return dbPath
+}
+
+// removeRegressionDB removes the existing regression test database if running
+// in regression test mode and it already exists.
+func removeRegressionDB(dbPath string) error {
+	// Don't do anything if not in regression test mode.
+	if !cfg.RegressionTest {
+		return nil
+	}
+
+	// Remove the old regression test database if it already exists.
+	fi, err := os.Stat(dbPath)
+	if err == nil {
+		fmt.Printf("Removing regression test database from '%s'", dbPath)
+		if fi.IsDir() {
+			err := os.RemoveAll(dbPath)
+			if err != nil {
+				return err
+			}
+		} else {
+			err := os.Remove(dbPath)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }

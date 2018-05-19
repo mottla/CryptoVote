@@ -5,7 +5,8 @@ package main
 
 import (
 	"testing"
-	"github.com/naivechain-master/CryptoNote1/edwards"
+
+	"github.com/CryptoVote/CryptoVote/CryptoNote1/edwards"
 )
 
 func TestTransaction_String(t *testing.T) {

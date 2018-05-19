@@ -5,11 +5,11 @@ package main
 
 import (
 	"sync"
-	"github.com/naivechain-master/CryptoNote1/edwards"
 	"log"
 	"fmt"
 	"bytes"
 	"os"
+	"github.com/CryptoVote/CryptoVote/CryptoNote1/edwards"
 )
 
 type Blockchain struct {
