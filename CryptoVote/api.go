@@ -21,7 +21,7 @@ func (n *Node) validate(w http.ResponseWriter, r *http.Request) {
 			b, err = json.Marshal(fmt.Sprintf("invalid ancestor at height", blocks[i+1].Index, err.Error()))
 			break
 		}
-		if !blocks[0].Data.isNil() {
+		if !blocks[0].Data.isEmpty() {
 			if err := n.validateTransaction(&blocks[i].Data, nil); err != nil {
 
 				b, err = json.Marshal(fmt.Sprintf("invalid transactions in chain at ", i, err.Error()))
@@ -77,14 +77,15 @@ func (node *Node) transactionByID(w http.ResponseWriter, r *http.Request) {
 	node.writeResponse(w, b)
 }
 
+//todo
 func (node *Node) showpool(w http.ResponseWriter, r *http.Request) {
 	var re = make(map[int]string)
-	c := 0
-	for _, v := range node.pool.poolMap {
-		re[c] = fmt.Sprintf("%x", v.EdSignature)
-		c++
-	}
-
+	//c := 0
+	//for _, v := range node.pool.votingMap {
+	//	re[c] = fmt.Sprintf("%x", v.EdSignature)
+	//	c++
+	//}
+	panic("not implemented")
 	b, err := json.Marshal(re)
 	if err != nil {
 		node.error(w, err, "failed to decode response")
@@ -95,7 +96,7 @@ func (node *Node) showpool(w http.ResponseWriter, r *http.Request) {
 }
 
 func (node *Node) voteResults(w http.ResponseWriter, r *http.Request) {
-	//allows user to ask for results by ether passing the Voting-Contract ID
+	//allows user to ask for results by ether passing the voting-Contract ID
 	//or the block-hash holding the Contract
 	byteMap := map[string][32]byte{}
 
@@ -109,22 +110,31 @@ func (node *Node) voteResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var vote *Voting
 	var resMap = make(map[string]uint)
 	var err error
 
-	if byteMap["id"] != [32]byte{} {
-		bl, ok := node.blockchain.BlockHoldingTx(byteMap["id"])
-		if ok {
-			vote = node.blockchain.votingMap[bl.Hash]
-		}
-	}
-	if vote != nil {
-		resMap, err = node.voteresults(vote)
+	voting, ok := node.blockchain.Voting(byteMap["id"])
+
+	if !ok {
+		b, err := json.Marshal(fmt.Sprintf("id %x not found", byteMap["id"]))
 		if err != nil {
-			node.error(w, err, "failed to count voteresult")
+			node.error(w, err, "failed to decode response")
 			return
 		}
+		node.writeResponse(w, b)
+		return
+	}
+
+	resMap, err = voting.Voteresults()
+
+	if err != nil {
+		b, err := json.Marshal(err.Error())
+		if err != nil {
+			node.error(w, err, "failed to decode response")
+			return
+		}
+		node.writeResponse(w, b)
+		return
 	}
 
 	b, err := json.Marshal(resMap)
@@ -173,17 +183,14 @@ func (node *Node) addTransaction(w http.ResponseWriter, r *http.Request) {
 		node.error(w, err, err.Error())
 		return
 	}
-	err := node.validateTransaction(&t,nil)
+	err := node.validateTransaction(&t, nil)
 	if err != nil {
 		node.error(w, err, err.Error())
 		return
 	}
-	success := node.pool.addTransaction(&t)
+	node.pool.addTransaction(&t)
 
-	if !success {
-		node.error(w, err, err.Error())
-		return
-	}
+
 	msg, err := node.newTxMessage(t)
 	if err != nil {
 		node.error(w, err, "failed to build message")

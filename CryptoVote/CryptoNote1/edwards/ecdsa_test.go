@@ -219,8 +219,7 @@ func randPrivScalarKeyList2(curve *TwistedEdwardsCurve, i int) []*PrivateKey {
 }
 
 func TestSign(t *testing.T) {
-	curve := new(TwistedEdwardsCurve)
-	curve.InitParam25519()
+	curve := Edwards()
 	p := randPrivScalarKeyList(curve,1)
 	for _,v:=range p{
 		fmt.Printf("\n%v %v", v.ecPk, v.secret)

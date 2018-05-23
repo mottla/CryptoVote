@@ -6,19 +6,19 @@ package main
 import (
 	"sync"
 	"log"
+	"os"
 	"fmt"
 	"bytes"
-	"os"
-	"github.com/CryptoVote/CryptoVote/CryptoNote1/edwards"
 )
 
 type Blockchain struct {
 	blocks      Blocks
 	mu          sync.RWMutex
-	accessMap   map[[32]byte]*Block  //key: blockhash
-	lookupMap   map[[32]byte]bool    //key : blockhash
-	votingMap   map[[32]byte]*Voting //key: blockhash
-	txLookupMap map[[32]byte]*Block  //key: edsignature [0:32]bytes
+	accessMap   map[BlockHash]*Block           //key: blockhash
+	lookupMap   map[BlockHash]bool             //key : blockhash
+	votingMap   map[TransactionID]*voting      //key: ed sig of vontings ->voting contract transaction
+	voteSetMap  map[TransactionID]*transaction //key: ed sig. value voteSet transaction only
+	txLookupMap map[TransactionID]*Block       //key: edsignature [32:]bytes
 	logger      *log.Logger
 }
 
@@ -30,23 +30,17 @@ func (bc *Blockchain) logError(err error) {
 	bc.log("[ERROR]", err)
 }
 
-type Voting struct {
-	contract *transaction
-	votes    map[[32]byte]*transaction //key is the keyimage to avoid multiple voting with the same key
-	reveal   *transaction
-}
-
 func newBlockchain() *Blockchain {
 
 	return &Blockchain{
 		blocks:      Blocks{},
 		mu:          sync.RWMutex{},
-		accessMap:   map[[32]byte]*Block{},
-		lookupMap:   map[[32]byte]bool{},
-		txLookupMap: make(map[[32]byte]*Block),
-		//key is the corresponding blockhash
-		votingMap: make(map[[32]byte]*Voting), //key is the blockhash holding the votingcontract
-		logger:    log.New(os.Stdout, fmt.Sprintf("[%v] Blockchain: ", apiAddr), log.Ldate|log.Ltime, ),
+		accessMap:   map[BlockHash]*Block{},
+		lookupMap:   map[BlockHash]bool{},
+		txLookupMap: make(map[TransactionID]*Block),
+		votingMap:   make(map[TransactionID]*voting),
+		voteSetMap:  make(map[TransactionID]*transaction),
+		logger:      log.New(os.Stdout, fmt.Sprintf("[%v] Blockchain: ", apiAddr), log.Ldate|log.Ltime, ),
 	}
 }
 func newBlockchainGenesis() (re *Blockchain) {
@@ -54,11 +48,11 @@ func newBlockchainGenesis() (re *Blockchain) {
 	return &Blockchain{
 		blocks:      Blocks{genesisBlock},
 		mu:          sync.RWMutex{},
-		accessMap:   map[[32]byte]*Block{genesisBlock.Hash: genesisBlock},
-		lookupMap:   map[[32]byte]bool{genesisBlock.Hash: true},
-		txLookupMap: make(map[[32]byte]*Block),
-		//key is the corresponding blockhash
-		votingMap: make(map[[32]byte]*Voting), //key is the blockhash holding the votingcontract
+		accessMap:   map[BlockHash]*Block{genesisBlock.Hash: genesisBlock},
+		lookupMap:   map[BlockHash]bool{genesisBlock.Hash: true},
+		txLookupMap: make(map[TransactionID]*Block),
+		votingMap:   make(map[TransactionID]*voting),
+		voteSetMap:  make(map[TransactionID]*transaction),
 	}
 }
 
@@ -99,7 +93,7 @@ func (bc *Blockchain) Block_ind(index uint32) (b *Block) {
 	return nil
 }
 
-func (bc *Blockchain) hasBlock(hash [32]byte) bool {
+func (bc *Blockchain) hasBlock(hash BlockHash) bool {
 	bc.mu.Lock()
 	defer bc.mu.Unlock()
 	//bc.log("looking for %v in accesmap", hash)
@@ -113,7 +107,18 @@ func (bc *Blockchain) hasTransaction(tx *transaction) (ok bool) {
 	return
 }
 
-func (bc *Blockchain) Block_hash(hash [32]byte) *Block {
+//returns the block, holding a transaction.
+func (bc *Blockchain) isRevealed(id TransactionID) (ok bool) {
+	bc.mu.Lock()
+	defer bc.mu.Unlock()
+	//bc.log("looking for %v in accesmap", hash)
+	if res, ok := bc.txLookupMap[id]; ok {
+		return res.Data.Typ == REVEAL_VOTING
+	}
+	return false
+}
+
+func (bc *Blockchain) Block_hash(hash BlockHash) *Block {
 
 	bc.mu.Lock()
 	defer bc.mu.Unlock()
@@ -121,12 +126,17 @@ func (bc *Blockchain) Block_hash(hash [32]byte) *Block {
 	return bc.accessMap[hash]
 }
 
-//TODO
-func (bc *Blockchain) BlockHoldingTx(edSig [32]byte) (res *Block, ok bool) {
-
+func (bc *Blockchain) BlockHoldingTx(edSig TransactionID) (res *Block, ok bool) {
 	bc.mu.Lock()
 	defer bc.mu.Unlock()
 	res, ok = bc.txLookupMap[edSig]
+	return
+}
+
+func (bc *Blockchain) Voting(edSig TransactionID) (res *voting, ok bool) {
+	bc.mu.Lock()
+	defer bc.mu.Unlock()
+	res, ok = bc.votingMap[edSig]
 	return
 }
 
@@ -134,51 +144,50 @@ func (bc *Blockchain) BlockHoldingTx(edSig [32]byte) (res *Block, ok bool) {
 //it adds a block, without any validity checks
 func (bc *Blockchain) addBlockCareless(block *Block) {
 
+	bc.mu.Lock()
+	defer bc.mu.Unlock()
+
 	bc.blocks = append(bc.blocks, block)
 	//fmt.Printf("adding to acces map key %v", block.Hash)
 	bc.accessMap[block.Hash] = block
 	bc.lookupMap[block.Hash] = true
-	switch block.Data.Typ {
+
+	trans := block.Data
+	switch trans.Typ {
 	case ADD_VOTERS:
-		//do nothing
+		bc.voteSetMap[copyBytesTo32(trans.EdSignature)] = &trans
 	case CREATE_VOTING:
-		bc.votingMap[block.Hash] = &Voting{contract: &block.Data, votes: make(map[[32]byte]*transaction)}
+		voting := newVoting(false)
+		voting.add(&block.Data)
+		for _, id := range trans.VoteSet {
+			voting.add(bc.voteSetMap[id])
+		}
+		bc.votingMap[copyBytesTo32(trans.EdSignature)] = voting
 	case VOTE:
-		vm, ok := bc.votingMap[block.Data.VoteHash]
+		voting, ok := bc.votingMap[copyBytesTo32(trans.EdSignature)]
 		if !ok {
-			bc.log("the vote you wanted to add, does not have a entry in the votingMap")
-			break
+			voting = newVoting(false)
+			bc.votingMap[copyBytesTo32(trans.EdSignature)] = voting
 		}
-		key := edwards.BigIntPointToEncodedBytes(block.Data.Signature.Ix, block.Data.Signature.Iy);
-		_, ok = vm.votes[*key]
-		if ok {
-			bc.log("keyimage already in map.. check that! block should be invalid!!")
-			break
-		}
-		vm.votes[*key] = &block.Data
-
-	case COMPLETE_VOTING:
-		vm, ok := bc.votingMap[block.Data.VoteHash]
+		voting.add(&trans)
+	case REVEAL_VOTING:
+		voting, ok := bc.votingMap[copyBytesTo32(trans.EdSignature)]
 		if !ok {
-			bc.log("the reveal you wanted to add, does not have a entry in the votingMap")
-			break
+			voting = newVoting(false)
+			bc.votingMap[copyBytesTo32(trans.EdSignature)] = voting
 		}
-		vm.reveal = &block.Data
-
+		voting.add(&trans)
 	default:
 		return
 	}
-
 	//fmt.Println("ADDING ", copyBytesTo32(block.Data.EdSignature))
 	bc.txLookupMap[ copyBytesTo32(block.Data.EdSignature) ] = block
-
 }
 
 //adds a block to the chain.
 //updates the votingMap if the block contained voting transactions
 //asserts that block has been fully validated.
-func (bc *Blockchain) addBlock(block *Block,
-	pool *TxPool) bool {
+func (bc *Blockchain) addBlock(block *Block, pool *TxPool) bool {
 
 	bc.mu.Lock()
 	defer bc.mu.Unlock()
@@ -207,11 +216,19 @@ func (bc *Blockchain) addBlock(block *Block,
 			//all transactions that were included before the fork go back into the pool
 
 			delete(bc.accessMap, bc.blocks[i].Hash)
-			delete(bc.votingMap, bc.blocks[i].Hash)
-			bc.lookupMap[bc.blocks[i].Hash] = false
+			delete(bc.lookupMap, bc.blocks[i].Hash)
 
-			if !bc.blocks[i].Data.isNil() {
+			if !bc.blocks[i].Data.isEmpty() {
 				delete(bc.txLookupMap, copyBytesTo32(bc.blocks[i].Data.EdSignature))
+
+				switch block.Data.Typ {
+				case CREATE_VOTING:
+					delete(bc.votingMap, copyBytesTo32(bc.blocks[i].Data.EdSignature))
+				case ADD_VOTERS:
+					delete(bc.voteSetMap, copyBytesTo32(bc.blocks[i].Data.EdSignature))
+				default:
+
+				}
 				pool.addTransaction(&bc.blocks[i].Data)
 			}
 		}
@@ -224,65 +241,39 @@ func (bc *Blockchain) addBlock(block *Block,
 		//fmt.Printf("adding to acces map key %v", block.Hash)
 		bc.accessMap[block.Hash] = block
 		bc.lookupMap[block.Hash] = true
-		switch block.Data.Typ {
+
+		trans := block.Data
+		switch trans.Typ {
 		case ADD_VOTERS:
-			//do nothing
+			bc.voteSetMap[copyBytesTo32(trans.EdSignature)] = &trans
 		case CREATE_VOTING:
-			bc.votingMap[block.Hash] = &Voting{contract: &block.Data, votes: make(map[[32]byte]*transaction)}
+			voting := newVoting(true)
+			voting.add(&trans)
+			for _, id := range trans.VoteSet {
+				voting.add(bc.voteSetMap[id])
+			}
+			bc.votingMap[copyBytesTo32(trans.EdSignature)] = voting
 		case VOTE:
-			vm, ok := bc.votingMap[block.Data.VoteHash]
-			if !ok {
-				panic("vote error 1 should not happen")
-				bc.log("the vote you wanted to add, does not have a entry in the votingMap")
-				break
-			}
-			key := edwards.BigIntPointToEncodedBytes(block.Data.Signature.Ix, block.Data.Signature.Iy);
-			_, ok = vm.votes[*key]
-			if ok {
-				panic("vote error 2 should not happen")
-				bc.log("keyimage already in map.. check that! block should be invalid!!")
-				break
-			}
-			vm.votes[*key] = &block.Data
-
-		case COMPLETE_VOTING:
-			vm, ok := bc.votingMap[block.Data.VoteHash]
-			if !ok {
-				panic("complete vote error should not happen")
-				bc.log("the reveal you wanted to add, does not have a entry in the votingMap")
-				break
-			}
-			vm.reveal = &block.Data
-
+			voting := bc.votingMap[trans.VoteID]
+			voting.add(&trans)
+		case REVEAL_VOTING:
+			voting := bc.votingMap[trans.VoteID]
+			voting.add(&trans)
 		default:
 			return true
 		}
 		//fmt.Println("ADDING ", copyBytesTo32(block.Data.EdSignature))
-		bc.txLookupMap[ copyBytesTo32(block.Data.EdSignature) ] = block
+		bc.txLookupMap[ copyBytesTo32(trans.EdSignature) ] = block
 		return true
 	}
 
 	return false
 }
 
-var emptyHash = [32]byte{}
-
 func (bc *Blockchain) validDifficultyChange(indexParent uint32, difficultyOfChild uint8) bool {
 	//TODO difficulty adaptation
 	return bc.Block_ind(indexParent).Difficulty == difficultyOfChild
 }
-
-//
-//func (bc *Blockchain) validatePartialChain(blocks Blocks) (invalidStartingFrom int) {
-//
-//	for i := 0; i < len(blocks)-1; i++ {
-//		if err := blocks[i+1].isValidAncestor(blocks[i]); err != nil {
-//			return int(blocks[i+1].Index)
-//		}
-//
-//	}
-//	return -1
-//}
 
 func (bc *Blockchain) String() string {
 	var buffer = new(bytes.Buffer)
@@ -291,28 +282,3 @@ func (bc *Blockchain) String() string {
 	}
 	return buffer.String()
 }
-
-//func (bc *Blockchain) isValid() bool {
-//	bc.mu.RLock()
-//	defer bc.mu.RUnlock()
-//
-//	if bc.chainHeight() == 0 {
-//		return false
-//	}
-//	if !bc.isValidGenesisBlock() {
-//		return false
-//	}
-//
-//	prevBlock := bc.getGenesisBlock()
-//	for i := 1; i < bc.chainHeight(); i++ {
-//		block := bc.Block_ind(i)
-//
-//		if ok := isValidAncestor(block, prevBlock); !ok {
-//			return false
-//		}
-//
-//		prevBlock = block
-//	}
-//
-//	return true
-//}

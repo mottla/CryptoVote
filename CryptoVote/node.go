@@ -105,10 +105,7 @@ func newNode(p2pAddr, apiAddr string) *Node {
 	//	db.Close()
 	//}()
 
-	pool := &TxPool{
-		mtx:     sync.RWMutex{},
-		poolMap: make(map[[64]byte]*transaction),
-		logger:  log.New(os.Stdout, fmt.Sprintf("[%v] Pool: ", apiAddr), log.Ldate|log.Ltime, )}
+	pool := newTxPool(apiAddr)
 
 	miner := &CPUMiner{
 		pool:              pool,

@@ -12,6 +12,7 @@ import (
 	"github.com/CryptoVote/CryptoVote/CryptoNote1/edwards"
 	"github.com/CryptoVote/CryptoVote/CryptoNote1"
 	"time"
+	"golang.org/x/crypto/sha3"
 )
 
 var (
@@ -87,9 +88,7 @@ type config struct {
 	DropAddrIndex        bool          `long:"dropaddrindex" description:"Deletes the address-based transaction index from the database on start up and then exits."`
 	RelayNonStd          bool          `long:"relaynonstd" description:"Relay non-standard transactions regardless of the default settings for the active network."`
 	RejectNonStd         bool          `long:"rejectnonstd" description:"Reject non-standard transactions regardless of the default settings for the active network."`
-
 }
-
 
 func errorCall(msg string) (err error) {
 	return &errorString{msg}
@@ -98,10 +97,6 @@ func errorCall(msg string) (err error) {
 var emptychain = newBlockchain()
 
 func (n *Node) validateTransaction(trans *transaction, bufferChain *Blockchain) (err error) {
-
-	if !trans.verifySignature(n.edcurve) {
-		return errorCall("Invalid signature! Transaction rejected")
-	}
 
 	if bufferChain == nil {
 		bufferChain = emptychain
@@ -112,8 +107,25 @@ func (n *Node) validateTransaction(trans *transaction, bufferChain *Blockchain) 
 	}
 
 	switch trans.Typ {
-	case CREATE_VOTING:
 
+	case ADD_VOTERS:
+		if !trans.verifySignature(n.edcurve) {
+			return errorCall("Invalid signature! Transaction rejected")
+		}
+		//a transactionByID to only to specify a set of unseperable voteSetMap
+
+		for _, pub := range trans.PubKeys {
+			_, err := edwards.ParsePubKey(n.edcurve, pub[:])
+			if err != nil {
+				return errorCall("Key parsing failed")
+			}
+		}
+		return nil
+
+	case CREATE_VOTING:
+		if !trans.verifySignature(n.edcurve) {
+			return errorCall("Invalid signature! Transaction rejected")
+		}
 		//transactionByID to create a voting
 		if len(trans.VoteSet) == 0 {
 			return errorCall("Votingset empty")
@@ -121,45 +133,54 @@ func (n *Node) validateTransaction(trans *transaction, bufferChain *Blockchain) 
 		if len(trans.PubKeys) == 0 {
 			return errorCall("Missing public address/es to vote on")
 		}
+		//check if all named votesets are onchain
 		for i, _ := range trans.VoteSet {
-			if n.blockchain.Block_hash(trans.VoteSet[i]) == nil && bufferChain.Block_hash(trans.VoteSet[i]) == nil {
+			_, ok1 := n.blockchain.BlockHoldingTx(trans.VoteSet[i])
+			_, ok2 := bufferChain.BlockHoldingTx(trans.VoteSet[i])
+			if !ok1 && !ok2 {
 				return errorCall("Votingset referenz hash is not on the blockchain")
 			}
 		}
+		//check if all candidates are vote-abel
 		var err error
 		for i, _ := range trans.PubKeys {
 			//parse and validateTransaction thereby
 			_, err = edwards.ParsePubKey(n.edcurve, trans.PubKeys[i][:])
 			if err != nil {
-				return errorCall(fmt.Sprintf("Voting destination %x invalid: %s", trans.PubKeys[i], err.Error()))
+				return errorCall(fmt.Sprintf("voting destination %x invalid: %s", trans.PubKeys[i], err.Error()))
 			}
 
 		}
 
 		return nil
-	case COMPLETE_VOTING:
-		chainHoldingVote := n.blockchain
-		block := chainHoldingVote.Block_hash(trans.VoteHash)
 
-		if block == nil {
+	case REVEAL_VOTING:
+		if !trans.verifySignature(n.edcurve) {
+			return errorCall("Invalid signature! Transaction rejected")
+		}
+
+		chainHoldingVote := n.blockchain
+		block, ok := chainHoldingVote.BlockHoldingTx(trans.VoteID)
+
+		if !ok {
 			chainHoldingVote = bufferChain
-			block = bufferChain.Block_hash(trans.VoteHash)
-			if block == nil {
-				return errorCall("Voting referenz hash is not on the blockchain")
+			block, ok = chainHoldingVote.BlockHoldingTx(trans.VoteID)
+			if !ok {
+				return errorCall("voting referenz hash is not on the blockchain")
 			}
 		}
 		if block.Data.Typ != CREATE_VOTING {
-			return errorCall("Voting referenz hash is not a Voting-Contract")
+			return errorCall("voting referenz hash is not a voting-Contract")
 		}
 		if len(block.Data.PubKeys) != len(trans.PrivateKeys) {
-			return errorCall(fmt.Sprintf("Voting Contract has %v, yet transaction has %v elements!", len(block.Data.VoteSet), len(trans.PrivateKeys)))
+			return errorCall(fmt.Sprintf("voting Contract has %v, yet transaction has %v elements!", len(block.Data.VoteSet), len(trans.PrivateKeys)))
 		}
 		if !block.Data.RevealNeeded {
-			return errorCall("Voting-Contract needs no key revealing")
+			return errorCall("voting-Contract needs no key revealing")
 		}
 
-		if chainHoldingVote.votingMap[block.Hash].reveal != nil {
-			return errorCall("Voting already revealed")
+		if chainHoldingVote.votingMap[trans.VoteID].IsRevealed() {
+			return errorCall("voting already revealed")
 		}
 
 		//Note that the revealer has to consider the order in which he publishes the privatekeys
@@ -177,50 +198,43 @@ func (n *Node) validateTransaction(trans *transaction, bufferChain *Blockchain) 
 
 	case VOTE:
 
+		if sha3.Sum512(trans.toMsg().Bytes())!=trans.EdSignature{
+			return errorCall("Invalid Hashsum! Voting-Transaction rejected")
+		}
 		chainHoldingVote := n.blockchain
-		block := chainHoldingVote.Block_hash(trans.VoteHash)
+		voteContract, ok := chainHoldingVote.Voting(trans.VoteID)
 
-		if block == nil {
+		if !ok {
 			chainHoldingVote = bufferChain
-			block = bufferChain.Block_hash(trans.VoteHash)
-			if block == nil {
-				return errorCall("Voting referenz hash is not on the blockchain")
+			voteContract, ok = chainHoldingVote.Voting(trans.VoteID)
+			if !ok {
+				return errorCall("voting for a contract, that is not on chain")
 			}
 		}
-		if block.Data.Typ != CREATE_VOTING {
-			return errorCall("Voting referenz hash is not a Voting-Contract")
+
+		if voteContract.IsRevealed() {
+			//should consider timestamps and/or index as well.
+			return errorCall("voting already revealed. You voted too late.")
 		}
 
-		if chainHoldingVote.votingMap[block.Hash].reveal != nil {
-			//should consider timestamps and/or index as well.
-			return errorCall("Voting already revealed. You voted too late.")
-		}
 		//checking for double spend attempt
 		//TODO pasing the two bigInt into one 32byte might lead to unwanted sideffects..
 		keyImage := edwards.BigIntPointToEncodedBytes(trans.Signature.Ix, trans.Signature.Iy)
-		_, ok1 := chainHoldingVote.votingMap[block.Hash].votes[*keyImage]
 
-		if ok1 {
-			return errorCall("Voting KeyImage already found")
+		if voteContract.IsDoubleSpend(*keyImage) {
+			return errorCall("voting KeyImage already found")
 		}
 
-		if !block.Data.RevealNeeded {
-
+		if !voteContract.RevealeNeeded() {
 			if trans.RevealElement != [32]byte{} {
 				return errorCall("Vote does not need Reveal-Element")
 			}
+
 			//if no reaveal is needed, everyone can see where the vote goes to
 			//but not where it comes from. So we can check if the vote goes to an existing candidate
 			//and reject the transaction if the candidate does not exist.
-			var found = false;
-			for i, _ := range block.Data.PubKeys {
-				if bytes.Compare(block.Data.PubKeys[i][:], trans.VoteTo[:]) == 0 {
-					found = true;
-					continue
-				}
-			}
-			if !found {
-				return errorCall("Voted on unknown address. Voting rejected.")
+			if !voteContract.AllowedCandidate(trans.VoteTo) {
+				return errorCall("Voted on unknown address. voting rejected.")
 			}
 		} else {
 			if trans.RevealElement == [32]byte{} {
@@ -231,28 +245,20 @@ func (n *Node) validateTransaction(trans *transaction, bufferChain *Blockchain) 
 		//validating the ring signature procedure starts. This part is time-consuming and hence a system vulnerability
 		var pubkeys = make([]*ecdsa.PublicKey, 0)
 
+		keys, err := voteContract.AllAllowedVotersPubkeys()
+		if err != nil {
+			return err
+		}
 		//this is true, if the voter didnt specify any subsets he used for his ringsignature
-		//we then take all allowed voters for this votingcontract for ringsig
+		//we then take all allowed voteSetMap for this votingcontract for ringsig
 		if len(trans.VoteSet) == 0 {
 
-			var tempVoteset *Block
-			//lets take allpublic keys of all keysets referenced by the voting contract as input for ringsignature validation
-			for _, hashHoldingTheVoteset := range block.Data.VoteSet {
-				tempVoteset = n.blockchain.Block_hash(hashHoldingTheVoteset)
-				if tempVoteset == nil {
-					tempVoteset = bufferChain.Block_hash(hashHoldingTheVoteset)
+			for i := 0; i < len(keys); i++ {
+				key, err := edwards.ParsePubKey(n.edcurve, keys[i][:])
+				if err != nil {
+					return errorCall("Key parsing failed")
 				}
-				if tempVoteset == nil {
-					return errorCall("voteset not found. This error should be unreachable!!!")
-				}
-				for _, pub := range tempVoteset.Data.PubKeys {
-					key, err := edwards.ParsePubKey(n.edcurve, pub[:])
-					if err != nil {
-						return errorCall("Key parsing failed")
-					}
-					pubkeys = append(pubkeys, key.ToECDSA())
-				}
-
+				pubkeys = append(pubkeys, key.ToECDSA())
 			}
 		} else {
 			return errorCall("Subset selection for a LSAG signature not supported yet")
@@ -263,7 +269,7 @@ func (n *Node) validateTransaction(trans *transaction, bufferChain *Blockchain) 
 			return errorCall(fmt.Sprintf("Missmatch in number of keys (%v) selected to verify the signature with %v cosigners ", len(pubkeys), len(trans.Signature.Ri)))
 		}
 		n.hasher.Reset()
-		n.hasher.Write(trans.VoteHash[:])
+		n.hasher.Write(trans.VoteID[:])
 		n.hasher.Write(trans.VoteTo[:])
 		message := n.hasher.Sum(nil)
 		//n.log("Validating signature on %x \nSignature:%v", message, trans.Signature)
@@ -275,17 +281,7 @@ func (n *Node) validateTransaction(trans *transaction, bufferChain *Blockchain) 
 		}
 		n.log("SIGNATURE IS VALID")
 		return nil
-	case ADD_VOTERS:
-		//a transactionByID to only to specify a set of unseperable voters
 
-		for _, pub := range trans.PubKeys {
-			_, err := edwards.ParsePubKey(n.edcurve, pub[:])
-			if err != nil {
-				return errorCall("Key parsing failed")
-			}
-		}
-
-		return nil
 	default:
 		return errorCall("Transaction type no supported")
 	}
@@ -304,12 +300,12 @@ func (n *Node) validateChain(blocks Blocks) (msg *Message, broadcast bool, err e
 	defer n.mu.Unlock()
 	latestStaleBlock := n.blockchain.getLatestBlock()
 
-	//copy := blocks
-	//for i := 0; i < len(blocks)-1; i++ {
-	//	if blocks[i].Index+1 != blocks[i+1].Index {
-	//		panic("wrong order")
-	//	}
-	//}
+
+	for i := 0; i < len(blocks)-1; i++ {
+		if blocks[i].Index+1 != blocks[i+1].Index {
+			panic("wrong order")
+		}
+	}
 
 	//trim away all known blocks
 	//TODO seems like the origin of some weird behavoíour..
@@ -319,9 +315,9 @@ func (n *Node) validateChain(blocks Blocks) (msg *Message, broadcast bool, err e
 	c := 0
 	for i, _ := range blocks {
 		if n.blockchain.hasBlock(blocks[i].Hash) {
-			//if blocks[i].Index>latestStaleBlock.Index{
-			//	panic("this is impossible")
-			//}
+			if blocks[i].Index>latestStaleBlock.Index{
+				panic("this is impossible")
+			}
 			c++
 		} else {
 			break
@@ -351,13 +347,6 @@ func (n *Node) validateChain(blocks Blocks) (msg *Message, broadcast bool, err e
 	if blocks[len(blocks)-1].Index < chainHeight {
 		// if the recived chain matches onto our chain, we asume that the senders state is outdated and we send him our chain
 		//TODO obviously this can be exploited.. should I really send blocks after receiving 'useless' data
-		//chain, err := n.blockchain.getPartialChain(firstPartialChainBlock.Index + 1)
-		//if err != nil {
-		//	msg, err := newBlocksMessage(chain)
-		//	if err != nil {
-		//		return msg, false, nil
-		//	}
-		//}
 		return nil, false, errorCall("received chain already outdated")
 	}
 
@@ -367,13 +356,6 @@ func (n *Node) validateChain(blocks Blocks) (msg *Message, broadcast bool, err e
 	//		todo find an efficient way for nodes, to synch
 	if err := blocks[0].isValidAncestor(n.blockchain.Block_ind(blocks[0].Index - 1)); err != nil {
 		n.log("a invalid ancestor at height", blocks[0].Index)
-		//for i := 0; i < len(copy); i++ {
-		//	if copy[i].Index+1 == blocks[0].Index {
-		//		fmt.Println("compare with cutted chain predecesor")
-		//		erre := blocks[0].isValidAncestor(copy[i])
-		//		fmt.Println(erre.Error())
-		//	}
-		//}
 		n.log(blocks[0])
 		n.log(n.blockchain.Block_ind(blocks[0].Index - 1))
 		n.logError(err)
@@ -382,16 +364,11 @@ func (n *Node) validateChain(blocks Blocks) (msg *Message, broadcast bool, err e
 		//return nil, false, errorCall("recived chain cannot be attached to local ledger due to inconsistency with leading chain element")
 	}
 
-	////TODO difficulty is checked in isValidAncestor
-	//if !n.blockchain.validDifficultyChange(blocks[0].Index-1, blocks[0].Difficulty) {
-	//	return nil, false, errorCall("recived chain cannot be attached to local ledger due to invalid difficulty continuation")
-	//}
-
 	//add all valid transactions to this chain
 	tempChain := newBlockchain()
 
-	//n.validateTransaction checks if transaction isNil. we check it outside
-	if !blocks[0].Data.isNil() {
+	//n.validateTransaction checks if transaction isEmpty. we check it outside
+	if !blocks[0].Data.isEmpty() {
 		if err := n.validateTransaction(&blocks[0].Data, tempChain); err != nil {
 			n.log("invalid transactions in leading chain block ", err.Error())
 			return nil, false, errorCall("recived chain cannot be attached to local ledger due to invalid transaction within")
@@ -424,7 +401,7 @@ func (n *Node) validateChain(blocks Blocks) (msg *Message, broadcast bool, err e
 			blocks = blocks[:i]
 			break
 		}
-		if !blocks[i].Data.isNil() {
+		if !blocks[i].Data.isEmpty() {
 			if err := n.validateTransaction(&blocks[i].Data, tempChain); err != nil {
 				n.log("invalid transactions in chain at block ", i, " with id ", blocks[i].Index, ". Msg:", err.Error())
 				//cut the rest
@@ -446,7 +423,7 @@ func (n *Node) validateChain(blocks Blocks) (msg *Message, broadcast bool, err e
 
 	for i, _ := range blocks {
 		n.blockchain.addBlock(blocks[i], n.pool)
-		if !blocks[i].Data.isNil() {
+		if !blocks[i].Data.isEmpty() {
 			n.log("included ", blocks[i].Data.Typ.name(), " at height ", blocks[i].Index)
 		}
 
@@ -461,47 +438,4 @@ func (n *Node) validateChain(blocks Blocks) (msg *Message, broadcast bool, err e
 	return msg, true, err
 }
 
-func (n *Node) voteresults(vote *Voting) (counter map[string]uint, err error) {
 
-	if vote.contract.RevealNeeded && vote.reveal == nil {
-		return counter, errorCall("Votingresults were not reveled yet. Try again later!")
-	}
-
-	if !vote.contract.RevealNeeded {
-		counter = make(map[string]uint)
-		for _, v := range vote.contract.PubKeys {
-			counter[fmt.Sprintf("%x", v)] = 0
-		}
-		for _, v := range vote.votes {
-			counter[fmt.Sprintf("%x", v.VoteTo)] += 1
-		}
-	}
-
-	if vote.contract.RevealNeeded && vote.reveal != nil {
-		counter = make(map[string]uint)
-
-		for _, v := range vote.contract.PubKeys {
-			counter[fmt.Sprintf("%x", v)] = 0
-		}
-		for _, v := range vote.votes {
-			for _, secret := range vote.reveal.PrivateKeys {
-				var P, R, pub *edwards.PublicKey
-				var private *edwards.PrivateKey
-				var err1, err2, err3 error
-				//parsing serialized ed25519 points into public and privatekeys
-				private, pub, err1 = edwards.PrivKeyFromScalar(n.edcurve, secret[:])
-				P, err2 = edwards.ParsePubKey(n.edcurve, v.VoteTo[:])
-				R, err3 = edwards.ParsePubKey(n.edcurve, v.RevealElement[:])
-				if err1 != nil || err2 != nil || err3 != nil {
-					return counter, errorCall("Error Parsing scalar to edwards key")
-				}
-				if CryptoNote1.VerifyOneTime_VOTE(private, *P, *R, n.hasher, n.edcurve) {
-					counter[fmt.Sprintf("%x", pub.Serialize())] += 1
-					continue
-				}
-			}
-		}
-
-	}
-	return
-}

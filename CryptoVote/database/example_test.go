@@ -10,13 +10,29 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/database"
-	_ "github.com/btcsuite/btcd/database/ffldb"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
-)
+	//"github.com/btcsuite/btcd/chaincfg"
 
+	_ "github.com/CryptoVote/CryptoVote/database/ffldb"
+	//"github.com/btcsuite/btcutil"
+	"github.com/CryptoVote/CryptoVote/database"
+)
+// Constants used to indicate the message bitcoin network.  They can also be
+// used to seek to the next message when a stream's state is unknown, but
+// this package does not provide that functionality since it's generally a
+// better idea to simply disconnect clients that are misbehaving over TCP.
+const (
+	// MainNet represents the main bitcoin network.
+	MainNet uint32 = 0xd9b4bef9
+
+	// TestNet represents the regression test network.
+	TestNet uint32 = 0xdab5bffa
+
+	// TestNet3 represents the test network (version 3).
+	TestNet3 uint32 = 0x0709110b
+
+	// SimNet represents the simulation test network.
+	SimNet uint32 = 0x12141c16
+)
 // This example demonstrates creating a new database.
 func ExampleCreate() {
 	// This example assumes the ffldb driver is imported.
@@ -31,7 +47,7 @@ func ExampleCreate() {
 	// this, nor put it in the temp directory, but it's done here to ensure
 	// the example cleans up after itself.
 	dbPath := filepath.Join(os.TempDir(), "examplecreate")
-	db, err := database.Create("ffldb", dbPath, wire.MainNet)
+	db, err := database.Create("ffldb", dbPath, MainNet)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -110,67 +126,67 @@ func Example_basicUsage() {
 // This example demonstrates creating a new database, using a managed read-write
 // transaction to store a block, and using a managed read-only transaction to
 // fetch the block.
-func Example_blockStorageAndRetrieval() {
-	// This example assumes the ffldb driver is imported.
-	//
-	// import (
-	// 	"github.com/btcsuite/btcd/database"
-	// 	_ "github.com/btcsuite/btcd/database/ffldb"
-	// )
-
-	// Create a database and schedule it to be closed and removed on exit.
-	// Typically you wouldn't want to remove the database right away like
-	// this, nor put it in the temp directory, but it's done here to ensure
-	// the example cleans up after itself.
-	dbPath := filepath.Join(os.TempDir(), "exampleblkstorage")
-	db, err := database.Create("ffldb", dbPath, wire.MainNet)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	defer os.RemoveAll(dbPath)
-	defer db.Close()
-
-	// Use the Update function of the database to perform a managed
-	// read-write transaction and store a genesis block in the database as
-	// and example.
-	err = db.Update(func(tx database.Tx) error {
-		genesisBlock := chaincfg.MainNetParams.GenesisBlock
-		return tx.StoreBlock(btcutil.NewBlock(genesisBlock))
-	})
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	// Use the View function of the database to perform a managed read-only
-	// transaction and fetch the block stored above.
-	var loadedBlockBytes []byte
-	err = db.Update(func(tx database.Tx) error {
-		genesisHash := chaincfg.MainNetParams.GenesisHash
-		blockBytes, err := tx.FetchBlock(genesisHash)
-		if err != nil {
-			return err
-		}
-
-		// As documented, all data fetched from the database is only
-		// valid during a database transaction in order to support
-		// zero-copy backends.  Thus, make a copy of the data so it
-		// can be used outside of the transaction.
-		loadedBlockBytes = make([]byte, len(blockBytes))
-		copy(loadedBlockBytes, blockBytes)
-		return nil
-	})
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	// Typically at this point, the block could be deserialized via the
-	// wire.MsgBlock.Deserialize function or used in its serialized form
-	// depending on need.  However, for this example, just display the
-	// number of serialized bytes to show it was loaded as expected.
-	fmt.Printf("Serialized block size: %d bytes\n", len(loadedBlockBytes))
-	// Output:
-	// Serialized block size: 285 bytes
-}
+//func Example_blockStorageAndRetrieval() {
+//	// This example assumes the ffldb driver is imported.
+//	//
+//	// import (
+//	// 	"github.com/btcsuite/btcd/database"
+//	// 	_ "github.com/btcsuite/btcd/database/ffldb"
+//	// )
+//
+//	// Create a database and schedule it to be closed and removed on exit.
+//	// Typically you wouldn't want to remove the database right away like
+//	// this, nor put it in the temp directory, but it's done here to ensure
+//	// the example cleans up after itself.
+//	dbPath := filepath.Join(os.TempDir(), "exampleblkstorage")
+//	db, err := database.Create("ffldb", dbPath, wire.MainNet)
+//	if err != nil {
+//		fmt.Println(err)
+//		return
+//	}
+//	defer os.RemoveAll(dbPath)
+//	defer db.Close()
+//
+//	// Use the Update function of the database to perform a managed
+//	// read-write transaction and store a genesis block in the database as
+//	// and example.
+//	err = db.Update(func(tx database.Tx) error {
+//		genesisBlock := chaincfg.MainNetParams.GenesisBlock
+//		return tx.StoreBlock(btcutil.NewBlock(genesisBlock))
+//	})
+//	if err != nil {
+//		fmt.Println(err)
+//		return
+//	}
+//
+//	// Use the View function of the database to perform a managed read-only
+//	// transaction and fetch the block stored above.
+//	var loadedBlockBytes []byte
+//	err = db.Update(func(tx database.Tx) error {
+//		genesisHash := chaincfg.MainNetParams.GenesisHash
+//		blockBytes, err := tx.FetchBlock(genesisHash)
+//		if err != nil {
+//			return err
+//		}
+//
+//		// As documented, all data fetched from the database is only
+//		// valid during a database transaction in order to support
+//		// zero-copy backends.  Thus, make a copy of the data so it
+//		// can be used outside of the transaction.
+//		loadedBlockBytes = make([]byte, len(blockBytes))
+//		copy(loadedBlockBytes, blockBytes)
+//		return nil
+//	})
+//	if err != nil {
+//		fmt.Println(err)
+//		return
+//	}
+//
+//	// Typically at this point, the block could be deserialized via the
+//	// wire.MsgBlock.Deserialize function or used in its serialized form
+//	// depending on need.  However, for this example, just display the
+//	// number of serialized bytes to show it was loaded as expected.
+//	fmt.Printf("Serialized block size: %d bytes\n", len(loadedBlockBytes))
+//	// Output:
+//	// Serialized block size: 285 bytes
+//}

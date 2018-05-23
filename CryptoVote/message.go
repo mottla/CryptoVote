@@ -35,19 +35,19 @@ type Message struct {
 	StartPoint uint32      `json:"start"`
 }
 
-func newQueryLatestMessage() *Message {
-	return &Message{
-		Type: MessageTypeQueryLatest,
-	}
-}
+//func newQueryLatestMessage() *Message {
+//	return &Message{
+//		Type: MessageTypeQueryLatest,
+//	}
+//}
 
-//var ctr = 0
+var ctr = 0
 
 func newQueryAllMessage(startPoint, buffer uint32) *Message {
-	//ctr++
-	//if ctr > 200 {
-	//	panic("asdf")
-	//}
+	ctr++
+	if ctr > 200 {
+		panic("asdf")
+	}
 	var sp uint32 = 1
 	if startPoint <= 0 {
 		sp = 1

@@ -23,7 +23,10 @@ var genesisBlock = &Block{
 	Hash:       [32]byte{1},
 }
 
+type BlockHash [32]byte 
 type Blocks []*Block
+
+var emptyHash = [32]byte{}
 
 func (blocks Blocks) Len() int {
 	return len(blocks)
@@ -45,7 +48,7 @@ type Block struct {
 	Nonce        uint32      `json:"nonce"`
 	ExtraNonce   uint64      `json: "extrnonce"`
 	Data         transaction `json:"Data"`
-	Hash         [32]byte    `json:"hash"`
+	Hash         BlockHash    `json:"hash"`
 }
 
 func (child *Block) isValidAncestor(parent *Block) error {

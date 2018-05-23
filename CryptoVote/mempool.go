@@ -10,6 +10,8 @@ import (
 
 	//"bytes"
 	"log"
+	"os"
+	"fmt"
 )
 
 // TxPool is used as a source of transactions that need to be mined into blocks
@@ -18,7 +20,8 @@ import (
 type TxPool struct {
 	lastUpdated int64 // last time pool was updated
 	mtx         sync.RWMutex
-	poolMap     map[[64]byte]*transaction
+	votingMap   map[[32]byte]*voting      //key: ed sig of vontings ->voting contract transaction
+	voteSetMap  map[[32]byte]*transaction //key: ed sig. value voteSet transaction only
 	logger      *log.Logger
 }
 
@@ -30,27 +33,50 @@ func (node *TxPool) logError(err error) {
 	node.log("[ERROR]", err)
 }
 
-func (mp *TxPool) addTransaction(trans *transaction) bool {
-	// Protect concurrent access.
+//returns the block, holding a transaction.
+func (mp *TxPool) votingContractById(id [32]byte) (res *voting, ok bool) {
 	mp.mtx.Lock()
 	defer mp.mtx.Unlock()
+	//bc.log("looking for %v in accesmap", hash)
+	res, ok = mp.votingMap[id]
 
-
-	//if bytes.Compare(trans.EdSignature[:], [64]byte{}[:])C
-
-	mp.poolMap[trans.EdSignature] = trans
-	mp.log("added new transaction to pool ", trans.Typ.name())
-	return true
-
+	return
 }
 
-func (mp *TxPool) contains(tx *transaction) bool {
+func (mp *TxPool) contains(trans *transaction) (ok bool) {
 	mp.mtx.Lock()
 	defer mp.mtx.Unlock()
-	if mp.poolMap[tx.EdSignature] != nil {
-		return true
+
+	var voting *voting
+	switch trans.Typ {
+	case ADD_VOTERS:
+		_, ok = mp.voteSetMap[copyBytesTo32(trans.EdSignature)]
+		return
+	case CREATE_VOTING:
+		voting, ok = mp.votingMap[copyBytesTo32(trans.EdSignature)]
+		if !ok {
+			return false
+		}
+	default:
+		voting, ok = mp.votingMap[trans.VoteID]
+		if !ok {
+			return false
+		}
 	}
-	return false
+	return voting.contains(trans)
+}
+
+//tell the pool that we included a reveal and hence all votesMap that are still pending, can be rejected
+func (mp *TxPool) revealUpdate(key [32]byte) (unincludedTransactionCount int) {
+	mp.mtx.Lock()
+	defer mp.mtx.Unlock()
+
+	if v, ok := mp.votingMap[key]; ok {
+		unincludedTransactionCount = len(v.votesMap)
+		delete(mp.votingMap, key)
+	}
+
+	return 0
 
 }
 
@@ -65,23 +91,103 @@ func (mp *TxPool) randPoolTransaction() (tx *transaction) {
 	}
 	mp.mtx.Lock()
 	defer mp.mtx.Unlock()
-	for _, value := range mp.poolMap {
-		return value
+
+	//if no voting was there, we include the votesets no one needs so far
+	for _, voting := range mp.voteSetMap {
+		return voting
 	}
+
+	//pick a voting at random
+	for key, _ := range mp.votingMap {
+		//gives us the most important tx to be mined nex and removes it from the voting
+		tx = mp.votingMap[key].mostValueableToMineNext()
+		if tx != nil {
+			return tx
+
+		}
+		//tx is nill->we emptied it, now remove the container
+		delete(mp.votingMap, key)
+	}
+
 
 	return new(transaction)
 }
 
-func (mp *TxPool) remove(tx *transaction) bool {
+func newTxPool(apiAddr string) *TxPool {
+	return &TxPool{
+		mtx:        sync.RWMutex{},
+		votingMap:  make(map[[32]byte]*voting),
+		voteSetMap: make(map[[32]byte]*transaction),
+		logger:     log.New(os.Stdout, fmt.Sprintf("[%v] Pool: ", apiAddr), log.Ldate|log.Ltime, )}
+}
+
+
+func (mp *TxPool) addTransaction(trans *transaction) {
 	// Protect concurrent access.
 	mp.mtx.Lock()
 	defer mp.mtx.Unlock()
+	mp.log("adding new transaction to pool ", trans.Typ.name())
 
-	if mp.poolMap[tx.EdSignature] != nil {
-		delete(mp.poolMap, tx.EdSignature)
-		return true
+	switch trans.Typ {
+	case ADD_VOTERS:
+
+		mp.voteSetMap[copyBytesTo32(trans.EdSignature)] = trans
+
+	case CREATE_VOTING:
+		voting, ok := mp.votingMap[copyBytesTo32(trans.EdSignature)]
+		if !ok {
+			voting = newVoting(false)
+			mp.votingMap[copyBytesTo32(trans.EdSignature)] = voting
+		}
+		voting.add(trans)
+		//for _, id := range trans.VoteSet {
+		//	if v, ok := mp.voteSetMap[id]; ok {
+		//		voting.add(v)
+		//		delete(mp.voteSetMap, id)
+		//	}
+		//}
+	default:
+		voting, ok := mp.votingMap[trans.VoteID]
+		if !ok {
+			voting = newVoting(false)
+			mp.votingMap[trans.VoteID] = voting
+		}
+		voting.add(trans)
+
 	}
 
-	return false
+}
 
+
+func (mp *TxPool) remove(trans *transaction) (ok bool) {
+	mp.mtx.Lock()
+	defer mp.mtx.Unlock()
+
+	var voting *voting
+	switch trans.Typ {
+	case ADD_VOTERS:
+
+		_, ok = mp.voteSetMap[copyBytesTo32(trans.EdSignature)]
+		if ok {
+			delete(mp.voteSetMap,copyBytesTo32(trans.EdSignature))
+			return
+		}
+
+	case CREATE_VOTING:
+		voting, ok = mp.votingMap[copyBytesTo32(trans.EdSignature)]
+		if ok {
+			//i could check if the container is empty and remove it then
+			return voting.remove(trans)
+		}
+
+	default:
+		voting, ok = mp.votingMap[trans.VoteID]
+		if ok {
+			//i could check if the container is empty and remove it then
+			return voting.remove(trans)
+		}
+
+	}
+
+	return
 }

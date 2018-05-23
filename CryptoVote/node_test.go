@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"time"
 
-
 	"encoding/hex"
 	"crypto/ecdsa"
 	"golang.org/x/crypto/sha3"
@@ -25,15 +24,14 @@ import (
 
 var (
 	cosigners         = 4
-	signerPos         = 1
 	voteingCandidates = 3 //number of votingcandidates
 	//voteOn            = 2 //starting at 0,1,..
 	signerPrivatekey = [32]byte{10, 208, 227, 225, 224, 127, 119, 57, 208, 241, 225, 21, 244, 52, 214, 155, 198, 66, 54,
 		32, 211, 17, 38, 94, 174, 127, 220, 47, 156, 18, 202, 216}
-	id, err = hex.DecodeString("6c8aff29d82ffe3ce36a6bb28a41a3863ab777be96a1c27bc32fa37b4e6714654a0e3b7179a62f06597067bdd2742647bb93b7988dc6f9e885b2af6c6016fa00")
+	id, err = hex.DecodeString("6c8aff29d82ffe3ce36a6bb28a41a3863ab777be96a1c27bc32fa37b4e671465f215f59307aa087839efe3c425b2cdec615445b1198ffd2141d8419ea43a3f0a")
 )
-//6c8aff29d82ffe3ce36a6bb28a41a3863ab777be96a1c27bc32fa37b4e67146547f561725853d543af1da1146027fbc16b56c07a951574384e3ff6b4f5bbf303
-//6c8aff29d82ffe3ce36a6bb28a41a3863ab777be96a1c27bc32fa37b4e67146513ccbb66fa04a8e39b1bc6ca10c018d62051d81abd4eed46843557adf2402202
+//6c8aff29d82ffe3ce36a6bb28a41a3863ab777be96a1c27bc32fa37b4e671465f031133d7b9cb913cec0badc3b36434b86f44239ccab3016c2136676e734a705
+//6c8aff29d82ffe3ce36a6bb28a41a3863ab777be96a1c27bc32fa37b4e671465f215f59307aa087839efe3c425b2cdec615445b1198ffd2141d8419ea43a3f0a
 func TestRandomUint64(t *testing.T) {
 	curve := edwards.Edwards()
 	privatekeys := randPrivScalarKeyList(curve, 245624576, 1)
@@ -47,7 +45,7 @@ var node = ":3000"
 //for getting transactions
 var getnode = ":3000"
 //for vote results
-var resnode = ":3000"
+var resnode = ":3003"
 //steps 1 to 4 allow a full testing for a reveal required voting
 //1#
 func Test_VOTESET_VOTECONTRACT(t *testing.T) {
@@ -84,8 +82,8 @@ func Test_VOTESET_VOTECONTRACT(t *testing.T) {
 	mineOne()
 
 	fmt.Println("\nAsk the node for the blockhash holding the voteset...")
-
-	block, err := getBlock(ADD_VOTERS_tx.EdSignature)
+	fmt.Printf("%x", ADD_VOTERS_tx.EdSignature)
+	_, err := getBlock(ADD_VOTERS_tx.EdSignature)
 	if err != nil {
 		t.Error("get block by id failed")
 		return
@@ -112,7 +110,7 @@ func Test_VOTESET_VOTECONTRACT(t *testing.T) {
 	//we now have our voteset on the chain and got the containing hash returned. lets work with that
 	CREATE_VOTING_tx := NewTransaction(&transaction{
 		Typ:          CREATE_VOTING,
-		VoteSet:      [][32]byte{block.Hash},
+		VoteSet:      []TransactionID{copyBytesTo32(ADD_VOTERS_tx.EdSignature)},
 		PubKeys:      voteCandidates,
 		RevealNeeded: true,
 	}, curve, &signerPrivatekey)
@@ -133,8 +131,8 @@ func Test_VOTESET_VOTECONTRACT(t *testing.T) {
 func Test_VOTE(t *testing.T) {
 
 	curve := edwards.Edwards()
-	voter := 2
-	voteon := 0
+	voter :=2
+	voteon := 1
 
 	privatekeys := randPrivScalarKeyList(curve, 4352, cosigners+1)
 
@@ -170,7 +168,7 @@ func Test_VOTE(t *testing.T) {
 
 	fmt.Println("\nStarting vote process. First we need to get the blockhash holding the Vote...")
 
-	voteBlock, err := getBlock(*copyBytes64(id));
+	_, err := getBlock(*copyBytes64(id));
 	if err != nil {
 		t.Error("get block by id failed")
 		return
@@ -191,13 +189,14 @@ func Test_VOTE(t *testing.T) {
 	copy(Pbyt[:], P.Serialize())
 	hasher := sha3.New256()
 	hasher.Reset()
-	hasher.Write(voteBlock.Hash[:])
+	tempid := copyBytesTo32(*copyBytes64(id))
+	hasher.Write(tempid[:])
 	hasher.Write(Pbyt[:])
 	message := hasher.Sum(nil)
 
 	sig := CryptoNote1.NewLSAG(privatekeys[voter].ToECDSA(), nil, nil)
 
-	//fmt.Printf("Creating Linkable Spontaneous Anonymous Groups Signature\non %s, using SHA256.  Signer position is %v of %v\n", curve.Params().Name, sig.signerPosition, chainHeight(sig.pubKeys))
+	//fmt.Printf("Creating Linkable Spontaneous Anonymous Groups Signature\non %s, using SHA256.  SignerPublic position is %v of %v\n", curve.Params().Name, sig.signerPosition, chainHeight(sig.pubKeys))
 	sig.Sign(message, pubkeys, privatekeys[voter].ToECDSA(), voter)
 
 	fmt.Printf("\nSignature on %x \n with %v", message, sig)
@@ -208,7 +207,7 @@ func Test_VOTE(t *testing.T) {
 		Typ:           VOTE,
 		Signature:     sig.Sigma,
 		VoteTo:        Pbyt,
-		VoteHash:      voteBlock.Hash,
+		VoteID:        copyBytesTo32(*copyBytes64(id)),
 		RevealElement: Rbyt,
 	}, curve, &signerPrivatekey)
 
@@ -222,7 +221,7 @@ func Test_VOTE(t *testing.T) {
 
 //3#
 func Test_REVEAL(t *testing.T) {
-	voteBlock, err := getBlock(*copyBytes64(id));
+	_, err := getBlock(*copyBytes64(id));
 	if err != nil {
 		t.Error("get block by id failed")
 		return
@@ -248,9 +247,9 @@ func Test_REVEAL(t *testing.T) {
 	}
 
 	Reveal_VOTE_tx := NewTransaction(&transaction{
-		Typ:         COMPLETE_VOTING,
+		Typ:         REVEAL_VOTING,
 		PrivateKeys: serializedVoterPrivKeys,
-		VoteHash:    voteBlock.Hash,
+		VoteID:      copyBytesTo32(*copyBytes64(id)),
 	}, curve, &signerPrivatekey)
 	//fmt.Printf("%v\n%v\n%v", u.Signature.Ci, u.Signature.Ri)
 	b := new(bytes.Buffer)
