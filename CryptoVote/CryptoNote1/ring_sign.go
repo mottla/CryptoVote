@@ -17,11 +17,15 @@ import (
 
 	"golang.org/x/crypto/sha3"
 	"github.com/CryptoVote/CryptoVote/CryptoNote1/edwards"
+	"sync"
 )
 
 var defaultCurve = edwards.Edwards()
 var defaultHasher = sha3.New256()
 
+//returns a new Linkable Spontaneous Anonymous Group Signature Struct.
+//if key is set, ls can be used for signing and verification. If not, ls can be used for verification only
+//default curve and hash can be replaced. Depricated to do so in the main protocol.
 func NewLSAG(key *ecdsa.PrivateKey, _curve elliptic.Curve, _hash hash.Hash) (ls *LSAGsignature) {
 	ls = new(LSAGsignature)
 
@@ -197,29 +201,12 @@ func (s *LSAGsignature) Verify(message []byte, pubKeys []*ecdsa.PublicKey) bool 
 
 	for i, sj := range s.Ri {
 		x1, x2 = Curve.ScalarBaseMult(sj.Bytes())
-		//fmt.Printf("\n curve 1 %v", Curve.IsOnCurve(x1, x2))
-		//fmt.Printf("\n curve 2 %v", Curve.IsOnCurve(pubKeys[i].X, pubKeys[i].Y))
 		x3, x4 = Curve.ScalarMult(pubKeys[i].X, pubKeys[i].Y, ci[i])
-		//alphaRestored := new(big.Int).Mod(new(big.Int).Add(sj, new(big.Int).Mul(s.Ci[i], s.xtest)), Curve.Params().N)
-		//fmt.Printf("\n curve %v", Curve.IsOnCurve(x3, x4))
-		//fmt.Printf("\nalpha restored %x", alphaRestored)
-		//fmt.Printf("\npubkey %x", pubKeys[i].X)
 		Lix, Liy = Curve.Add(x1, x2, x3, x4)
-		//Lresx, _ := Curve.ScalarBaseMult(alphaRestored.Bytes())
-		//fmt.Printf("\nLi restored %x --- original %x %v", Lresx, Lix, Curve.IsOnCurve(Lix, Liy))
 		t1, t2 = s.hashToEcc(pubKeys[i].X, pubKeys[i].Y)
-		//fmt.Printf("\n### Hpx %v", t1)
-		//fmt.Printf("\npubkey %x", pubKeys[i].X)
 		x3, x4 = Curve.ScalarMult(s.Ix, s.Iy, ci[i])
-		//fmt.Printf("\nRi step 1 IX %x and ci %x  on curve %v", s.Ix, ci[i], Curve.IsOnCurve(x3, x4))
 		x1, x2 = Curve.ScalarMult(t1, t2, sj.Bytes())
-		//fmt.Printf("\n H(P).x %v on curve %v sj bytes %v", x1, Curve.IsOnCurve(x1, x2), sj.Bytes())
 		Rix, Riy = Curve.Add(x1, x2, x3, x4)
-		//Rix.Mod(Rix,Curve.Params().N)
-		//Riy.Mod(Riy,Curve.Params().N)
-
-		//Rresx, _ := Curve.ScalarMult(t1, t2, alphaRestored.Bytes())
-		//fmt.Printf("\nRi restored %x --- original %x %v", Rresx, Rix, Curve.IsOnCurve(Rix, Riy))
 		hasher.Reset()
 		hasher.Write(message)
 		hasher.Write(Lix.Bytes())
@@ -255,26 +242,25 @@ func (s *TRSsignature) Sign(message []byte, pubKeys []*ecdsa.PublicKey, signerKe
 	//wg := new(sync.WaitGroup)
 	for i := 0; i < len(keySet); i++ {
 		//wg.Add(1)
-		qi[i] = RandFieldElement(s.Curve)
-
 		//go func(i int) {
+			qi[i] = RandFieldElement(s.Curve)
 
-		var x1, x2, x4, x3 *big.Int
-		var t1, t2 *big.Int
-		if i != int(signerPosition) {
-			wi[i] = RandFieldElement(s.Curve)
-			x1, x2 = Curve.ScalarBaseMult(qi[i].Bytes())
-			x3, x4 = Curve.ScalarMult(keySet[i].X, keySet[i].Y, wi[i].Bytes())
-			Li[i].a, Li[i].b = Curve.Add(x1, x2, x3, x4)
-			t1, t2 = s.hashToEcc(keySet[i].X, keySet[i].Y)
-			x1, x2 = Curve.ScalarMult(t1, t2, qi[i].Bytes())
-			x3, x4 = Curve.ScalarMult(s.Ix, s.Iy, wi[i].Bytes())
-			Ri[i].a, Ri[i].b = Curve.Add(x1, x2, x3, x4)
-		} else { //at i==signerPosition
-			Li[i].a, Li[i].b = Curve.ScalarBaseMult(qi[i].Bytes())
-			t1, t2 = s.hashToEcc(keySet[i].X, keySet[i].Y)
-			Ri[i].a, Ri[i].b = Curve.ScalarMult(t1, t2, qi[i].Bytes())
-		}
+			var x1, x2, x4, x3 *big.Int
+			var t1, t2 *big.Int
+			if i != int(signerPosition) {
+				wi[i] = RandFieldElement(s.Curve)
+				x1, x2 = Curve.ScalarBaseMult(qi[i].Bytes())
+				x3, x4 = Curve.ScalarMult(keySet[i].X, keySet[i].Y, wi[i].Bytes())
+				Li[i].a, Li[i].b = Curve.Add(x1, x2, x3, x4)
+				t1, t2 = s.hashToEcc(keySet[i].X, keySet[i].Y)
+				x1, x2 = Curve.ScalarMult(t1, t2, qi[i].Bytes())
+				x3, x4 = Curve.ScalarMult(s.Ix, s.Iy, wi[i].Bytes())
+				Ri[i].a, Ri[i].b = Curve.Add(x1, x2, x3, x4)
+			} else { //at i==signerPosition
+				Li[i].a, Li[i].b = Curve.ScalarBaseMult(qi[i].Bytes())
+				t1, t2 = s.hashToEcc(keySet[i].X, keySet[i].Y)
+				Ri[i].a, Ri[i].b = Curve.ScalarMult(t1, t2, qi[i].Bytes())
+			}
 		//	wg.Done()
 		//}(i)
 
@@ -358,7 +344,6 @@ type Sigma struct {
 	//position of signer Public Key in the pubKeys Array. Should be assigned randomly.
 	Ci []*big.Int //commitment for TRS. In LSAG only len(Ci)=1
 	Ri []*big.Int //commitment for LSAG and TRS
-	//xtest *big.Int
 }
 
 func (s TRSsignature) String() string {
@@ -511,7 +496,6 @@ func PrepareRingSig_random(in RingSignature, randSeed int64, cosigners int) (sig
 		signerPosition %= (cosigners + 1)
 	}
 	privs, pkps := randKeySet(in.GetCurve(), 1, cosigners+1)
-	fmt.Println(privs)
 	//privs, pkps := randPrivScalarKeyList2(edwards.Edwards(), cosigners+1)
 	signerPrivatekey = privs[signerPosition]
 	in.AddKeyImage(signerPrivatekey)

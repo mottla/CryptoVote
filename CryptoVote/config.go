@@ -20,6 +20,7 @@ var (
 )
 
 // See loadConfig for details on the configuration load process.
+//todo copied this from papa bitcoin^^ would be nice if the project would find all those config settings implemented.. long way...
 type config struct {
 	ShowVersion          bool          `short:"V" long:"version" description:"Display version information and exit"`
 	ConfigFile           string        `short:"C" long:"configfile" description:"Path to configuration file"`
@@ -198,7 +199,7 @@ func (n *Node) validateTransaction(trans *transaction, bufferChain *Blockchain) 
 
 	case VOTE:
 
-		if sha3.Sum512(trans.toMsg().Bytes())!=trans.EdSignature{
+		if sha3.Sum512(trans.toMsg().Bytes()) != trans.EdSignature {
 			return errorCall("Invalid Hashsum! Voting-Transaction rejected")
 		}
 		chainHoldingVote := n.blockchain
@@ -300,10 +301,10 @@ func (n *Node) validateChain(blocks Blocks) (msg *Message, broadcast bool, err e
 	defer n.mu.Unlock()
 	latestStaleBlock := n.blockchain.getLatestBlock()
 
-
+	//unecessary check..
 	for i := 0; i < len(blocks)-1; i++ {
 		if blocks[i].Index+1 != blocks[i+1].Index {
-			panic("wrong order")
+			panic("wrong order.")
 		}
 	}
 
@@ -312,18 +313,17 @@ func (n *Node) validateChain(blocks Blocks) (msg *Message, broadcast bool, err e
 	//example in past: got 5 blocks. starting at 53. current height is 55
 	//			then all blocks from 53 to 56 were removed due to the following map lookup..#
 	//			the chain is now at height 57 and cannot be attached. The querry all now starts a ping race..
-	c := 0
+	//c := 0
 	for i, _ := range blocks {
-		if n.blockchain.hasBlock(blocks[i].Hash) {
-			if blocks[i].Index>latestStaleBlock.Index{
-				panic("this is impossible")
-			}
-			c++
-		} else {
-			break
+		if !n.blockchain.hasBlock(blocks[i].Hash) {
+			//if blocks[i].Index > latestStaleBlock.Index {
+			//	panic("this is impossible")
+			//}
+			//c++
+			blocks = blocks[i:]
 		}
 	}
-	blocks = blocks[c:]
+
 	//we knew each block already, lets do nothing
 	if len(blocks) == 0 {
 		return nil, false, errorCall("received chain already integrated")
@@ -338,15 +338,15 @@ func (n *Node) validateChain(blocks Blocks) (msg *Message, broadcast bool, err e
 
 	//we received a chain to high to attach to local bc
 	if blocks[0].Index > chainHeight+1 {
-		//TODO a malicious fullnode could force me to ping him back by sending trash
+		//TODO a malicious fullnode could force me to ping him back by sending trash. somtimes responding with newQueryAll results in a ping race..
 		fmt.Println("a")
 		return newQueryAllMessage(chainHeight, uint32(2+len(blocks)*20/100)), true, nil
 	}
 
 	//the leading block in the chain is below our latest stale block
 	if blocks[len(blocks)-1].Index < chainHeight {
-		// if the recived chain matches onto our chain, we asume that the senders state is outdated and we send him our chain
-		//TODO obviously this can be exploited.. should I really send blocks after receiving 'useless' data
+		// if the recived chain matches onto our chain, we asume that the senders state is outdated and we could send him our chain?
+		//NOTE: obviously this can be exploited.. should I really send blocks after receiving 'useless' data.. better don't
 		return nil, false, errorCall("received chain already outdated")
 	}
 
@@ -364,7 +364,8 @@ func (n *Node) validateChain(blocks Blocks) (msg *Message, broadcast bool, err e
 		//return nil, false, errorCall("recived chain cannot be attached to local ledger due to inconsistency with leading chain element")
 	}
 
-	//add all valid transactions to this chain
+	//add all valid transactions to this chain. This is very importand
+	//and allowes us, to verify transaction, which require transcations to be 'on chain' already, to be validatable  (e.g. cannot reveal a voting, if the voting contract does not exist yet..)
 	tempChain := newBlockchain()
 
 	//n.validateTransaction checks if transaction isEmpty. we check it outside
@@ -433,9 +434,8 @@ func (n *Node) validateChain(blocks Blocks) (msg *Message, broadcast bool, err e
 		n.miner.updateHight <- n.blockchain.chainHeight()
 	}
 
+	//now we broadcast all blocks, we truly included
 	msg, err = newBlocksMessage(blocks[len(blocks)-1:])
 
 	return msg, true, err
 }
-
-

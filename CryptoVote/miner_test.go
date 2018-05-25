@@ -61,13 +61,13 @@ func TestDifficulty_algo(t *testing.T) {
 }
 
 func TestCPUMiner_Start_HTTP(t *testing.T) {
-	params := map[string]uint8{"procs":7, "amount": 150}
+	params := map[string]uint8{"procs":1, "amount": 0}
 	fmt.Println(time.Now().Unix())
 	b := new(bytes.Buffer)
 	fmt.Println(1.1)
 	json.NewEncoder(b).Encode(params)
 	fmt.Println(1.3)
-	res, _ := http.Post("http://127.0.0.1:3003/startMining", "application/json; charset=utf-8", b)
+	res, _ := http.Post("http://127.0.0.1:3001/startMining", "application/json; charset=utf-8", b)
 	fmt.Println(2)
 	io.Copy(os.Stdout, res.Body)
 	fmt.Println(3)

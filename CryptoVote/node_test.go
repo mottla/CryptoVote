@@ -23,15 +23,15 @@ import (
 )
 
 var (
-	cosigners         = 4
-	voteingCandidates = 3 //number of votingcandidates
+	cosigners         = 8
+	voteingCandidates = 6 //number of votingcandidates
 	//voteOn            = 2 //starting at 0,1,..
 	signerPrivatekey = [32]byte{10, 208, 227, 225, 224, 127, 119, 57, 208, 241, 225, 21, 244, 52, 214, 155, 198, 66, 54,
 		32, 211, 17, 38, 94, 174, 127, 220, 47, 156, 18, 202, 216}
-	id, err = hex.DecodeString("6c8aff29d82ffe3ce36a6bb28a41a3863ab777be96a1c27bc32fa37b4e671465f215f59307aa087839efe3c425b2cdec615445b1198ffd2141d8419ea43a3f0a")
+	id, err = hex.DecodeString("6c8aff29d82ffe3ce36a6bb28a41a3863ab777be96a1c27bc32fa37b4e671465698434f418fa6d389f96018f27f14d2276baccafe42ef6d43aaddeebd5c7cb0d")
 )
+//6c8aff29d82ffe3ce36a6bb28a41a3863ab777be96a1c27bc32fa37b4e6714657022e49a4cc2851ddfaa91751bd3827478c58d53fa195a79fc74ad1e14596200
 //6c8aff29d82ffe3ce36a6bb28a41a3863ab777be96a1c27bc32fa37b4e671465f031133d7b9cb913cec0badc3b36434b86f44239ccab3016c2136676e734a705
-//6c8aff29d82ffe3ce36a6bb28a41a3863ab777be96a1c27bc32fa37b4e671465f215f59307aa087839efe3c425b2cdec615445b1198ffd2141d8419ea43a3f0a
 func TestRandomUint64(t *testing.T) {
 	curve := edwards.Edwards()
 	privatekeys := randPrivScalarKeyList(curve, 245624576, 1)
@@ -45,7 +45,7 @@ var node = ":3000"
 //for getting transactions
 var getnode = ":3000"
 //for vote results
-var resnode = ":3003"
+var resnode = ":3000"
 //steps 1 to 4 allow a full testing for a reveal required voting
 //1#
 func Test_VOTESET_VOTECONTRACT(t *testing.T) {
@@ -131,7 +131,7 @@ func Test_VOTESET_VOTECONTRACT(t *testing.T) {
 func Test_VOTE(t *testing.T) {
 
 	curve := edwards.Edwards()
-	voter :=2
+	voter := 1
 	voteon := 1
 
 	privatekeys := randPrivScalarKeyList(curve, 4352, cosigners+1)
@@ -200,7 +200,8 @@ func Test_VOTE(t *testing.T) {
 	sig.Sign(message, pubkeys, privatekeys[voter].ToECDSA(), voter)
 
 	fmt.Printf("\nSignature on %x \n with %v", message, sig)
-	fmt.Print(sig.Verify(message, pubkeys))
+	go func() { fmt.Print(sig.Verify(message, pubkeys)) }()
+
 	//fmt.Printf("\n Keys %v", pubkeys)
 
 	VOTE_tx := NewTransaction(&transaction{

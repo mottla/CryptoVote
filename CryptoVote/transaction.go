@@ -17,14 +17,13 @@ type TransactionType byte
 type TransactionID [32]byte
 
 const (
-	CREATE_VOTING TransactionType = 12
-	VOTE          TransactionType = 13
-	ADD_VOTERS    TransactionType = 11
-	REVEAL_VOTING TransactionType = 14
+	ADD_VOTERS    TransactionType = 0x1
+	CREATE_VOTING TransactionType = 0x2
+	VOTE          TransactionType = 0x3
+	REVEAL_VOTING TransactionType = 0x4
 )
 
 var emptySig = [64]byte{}
-
 
 //this struct is used for all kinds of possible moves than can be made on the naive chain
 //e.g. Create a Vote, Vote on something, Create a Set of Voters (list of public keys)
@@ -33,20 +32,21 @@ var emptySig = [64]byte{}
 //To 'vote on something' one needs to proof the ownership of a corresponding privatekey contained in a set of allowed voteSetMap
 //fot the selected voting contract. We do so by using LSAG signatures
 type transaction struct {
-	EdSignature  [64]byte `json:"ID"`   //the signature is used to verify the transaction, by
-	SignerPublic [32]byte `json:"Data"` //needed to verify the signature.
+	EdSignature  [64]byte `json:"ID"`   //the signature is used to verify the integrity of the transaction and represents also the trnsactions unique ID. Votes do not add this signature, since they are validated via their LSAG-Signature. Votes write their sha3 64byte hash into this field, so we can use this as their key to access them
+	SignerPublic [32]byte `json:"Data"` //needed to verify the signature. Empty for Vote-Transactions
 
 	Typ           TransactionType   `json:"Typ"`
-	VoteSet       []TransactionID   `json:"voteset"`       //set of blockhashes holding the type specific information
-	PubKeys       [][32]byte        `json:"pubkeys"`       //set containing public ed25519 points
-	Signature     CryptoNote1.Sigma `json:"sig"`           //Ring signature
-	VoteID        TransactionID     `json:"ID_of_Voting"`  //for Vote and reveal. Points on the vote contract edwars signature
-	VoteTo        [32]byte          `json:"voteOnAddress"` //for Vote transactionByID only. VoteTo is one of the addresses listet by the contract a user can vote on
-	RevealElement [32]byte          `json:"reveal_element"`
-	PrivateKeys   [][32]byte        `json:"private_keys"` //only needed to reaveal the votingresults for a COMPLETE_VOTE transaction
-	RevealNeeded  bool              `json:"reveal_needed"`
+	VoteSet       []TransactionID   `json:"voteset"`        //set of Vote-Set ID's the Vote-contract specifies to define all allowed voters
+	PubKeys       [][32]byte        `json:"pubkeys"`        //set containing public ed25519 points. Used by Vote-Set and Vote-Contract to set allowed voters or possible voting-candidates
+	Signature     CryptoNote1.Sigma `json:"sig"`            //Ring signature. Used only by Vote-transaction
+	VoteID        TransactionID     `json:"ID_of_Voting"`   //for Vote and reveal-transaction. Points on the vote contract ID, as destination of the vote or reveal
+	VoteTo        [32]byte          `json:"voteOnAddress"`  //for Vote only. VoteTo is one of the addresses listet by the contract (in PubKeys) a user can vote on
+	RevealElement [32]byte          `json:"reveal_element"` //for Vote only. Needed to resolve the stealth address (see crpytoNote 2.0 paper) after the Complete-Voting transaction has closed the voting.
+	PrivateKeys   [][32]byte        `json:"private_keys"`   //for reaveal-voting-transaction only. Contains the secrets corresponding to PubKeys (set by the Voting-Contract) that were listed as candidates
+	RevealNeeded  bool              `json:"reveal_needed"`  //for Vote-Contract only. Defines if Vote-transaction requires using stealth-addresses as destination s.t. during the vote periode no one (except the creator) can see the current state of the voting.
 }
 
+//checks if a transaction struct is empty
 func (t *transaction) isEmpty() bool {
 
 	//non vote transaction must have a edsignature
@@ -59,6 +59,7 @@ func (t *transaction) isEmpty() bool {
 	return false
 }
 
+///returns a key-Image I= xH_p(P) if the transaction is of type vote. thows error if parsing failed or wrong type
 func (t *transaction) keyImage() (img *[32]byte, err error) {
 	if t.Typ == VOTE {
 		if t.Signature.Ix == nil || t.Signature.Iy == nil {
@@ -69,7 +70,7 @@ func (t *transaction) keyImage() (img *[32]byte, err error) {
 	return nil, errorCall("cannot get keyimage from non-vote transaction")
 }
 
-//TODO if one sends huge transactions this check can be costly..
+//TODO if one sends huge transactions this check can be costly.. I should introduce a quick tx size check in the config.validateTransaction method
 func (t *transaction) toMsg() *bytes.Buffer {
 
 	buffer := new(bytes.Buffer)
@@ -111,14 +112,14 @@ func (t *transaction) verifySignature(curve *edwards.TwistedEdwardsCurve) bool {
 	return ed25519.Verify(&t.SignerPublic, msg, &t.EdSignature)
 }
 
-func NewTransaction(t *transaction, curve *edwards.TwistedEdwardsCurve, scalar *[32]byte) *transaction {
+func NewTransaction(t *transaction, curve *edwards.TwistedEdwardsCurve, privateKey *[32]byte) *transaction {
 	if t.Typ == VOTE {
 		//a voting transaction must not be signed with edwards! would make ringsignature useless :)
 		//instead we use its hash for identification
-		t.EdSignature=sha3.Sum512(t.toMsg().Bytes())
+		t.EdSignature = sha3.Sum512(t.toMsg().Bytes())
 		return t
 	}
-	t.hashAndSign(curve, scalar)
+	t.hashAndSign(curve, privateKey)
 	return t
 }
 
@@ -198,6 +199,7 @@ func (ms TransactionType) name() string {
 		return "UNKNOWN Transaction Type"
 	}
 }
+
 func (ms TransactionType) exists() bool {
 	switch ms {
 	case CREATE_VOTING:

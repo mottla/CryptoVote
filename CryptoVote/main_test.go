@@ -43,7 +43,7 @@ func Test3Node(t *testing.T) {
 	flag.Parse()
 	a, b := ":6003", ":3003"
 	go newNode(a,b).run()
-	time.Sleep(200 * time.Second)
+	time.Sleep(2 * time.Second)
 	connectPeers(":6001", ":3003")
 
 	var input string
@@ -64,7 +64,7 @@ func Test4Node(t *testing.T) {
 func Test5Node(t *testing.T) {
 
 
-	connectPeers(":6004", ":3000")
+	connectPeers(":6001", ":3000")
 
 }
 

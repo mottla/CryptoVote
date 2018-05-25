@@ -48,13 +48,13 @@ func TestAPI_http(t *testing.T) {
 	b = new(bytes.Buffer)
 	res, _ = http.Post("http://127.0.0.1:3001/blocksH", "application/json; charset=utf-8", b)
 	io.Copy(os.Stdout, res.Body)
-	//
+
 	//fmt.Println(2)
 	//b = new(bytes.Buffer)
 	//res, _ = http.Post("http://127.0.0.1:3003/blocksH", "application/json; charset=utf-8", b)
 	//
 	//io.Copy(os.Stdout, res.Body)
-	//fmt.Println()
+	fmt.Println()
 	//b = new(bytes.Buffer)
 	//res, _ = http.Post("http://127.0.0.1:3004/blocksH", "application/json; charset=utf-8", b)
 	//
